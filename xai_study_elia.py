@@ -1021,11 +1021,15 @@ def plot_shap_global():
     st.pyplot(fig)
     plt.close(fig)
 
+def verdetto(pred):
+    """Previsione del modello colorata: Malato in rosso, Sano in verde."""
+    colore = "red" if pred == "Malato" else "green"
+    return f":{colore}[**{pred}**]"
 
 def render_example(method, example):
     """UN paziente esempio: verdetto + tabella + (eventuale) spiegazione."""
     eid = example["id"]
-    st.markdown(f"**Previsione del modello: `{example['pred']}`**")
+    st.markdown(f"**Previsione del modello:** {verdetto(example['pred'])}")
     features_table(example["values"])
 
     if method == BASELINE:
@@ -1043,12 +1047,12 @@ def render_example(method, example):
             rows, columns=["Variabile", "Valore attuale", "Valore alternativo"]
         ).set_index("Variabile"))
         target = "Sano" if example["pred"] == "Malato" else "Malato"
-        st.caption(f"Con queste modifiche la previsione diventerebbe: **{target}**.")
+        st.caption(f"Con queste modifiche la previsione diventerebbe: {verdetto(target)}.")
 
     elif method == "Anchors":
         a = ANCHORS_RULE[eid]
         st.markdown("**Regola:** SE " + "  E  ".join(f"`{c}`" for c in a["rule"]) +
-                    f"  ALLORA previsione = **{a['pred']}**")
+                    f"  ALLORA previsione = {verdetto(a['pred'])}")
         st.caption(f"La regola è corretta nel {a['precision']:.0%} dei pazienti "
                    f"simili e si applica al {a['coverage']:.0%} dei pazienti.")
 
@@ -1356,7 +1360,7 @@ GLOSSARY = [
      "Dolore transitorio al torace o sensazione di pressione che si manifesta "
      "quando il muscolo cardiaco non riceve una sufficiente quantità di ossigeno."),
     ("Pressione a riposo (trestbps)",
-     "Pressione arteriosa misurata a riposo, in mm Hg."),
+     "Pressione arteriosa misurata a riposo, in mmHg."),
     ("Colesterolo (chol)",
      "Colesterolo sierico nel sangue, in mg/dl."),
     ("Glicemia a digiuno (fbs)",
@@ -1375,7 +1379,7 @@ GLOSSARY = [
     ("Pendenza del tratto ST (slope)",
      "Andamento del tratto ST durante il picco dello sforzo "
      "(in salita, piatto o in discesa)."),
-    ("Vasi principali (ca)",
+    ("Vasi colorati (ca)",
      "Numero di vasi sanguigni principali (da 0 a 3) resi visibili tramite "
      "fluoroscopia."),
     ("Test di stress al tallio (thal)",
