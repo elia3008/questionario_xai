@@ -1135,8 +1135,8 @@ def page_instructions():
         "In ogni blocco:\n\n"
         "1. osservi **2 pazienti di esempio** con la decisione del modello e una spiegazione di quella classificazione del paziente come malato o come sano;\n"
         "2. ti mostriamo **5 nuovi pazienti senza la classificazione del modello** e "
-        "provi a prevederla;\n"
-        "3. dalla seconda parte in poi, valuti quanto la spiegazione ti è "
+        "provi tu a prevederla, esprimendo il livello di sicurezza nella risposta;\n"
+        "3. alla fine di ogni blocco ti verrà chiesto di valutare quanto la spiegazione ti è "
         "sembrata utile.\n\n"
         "Non esistono risposte 'giuste' nella parte di valutazione: ci interessa "
         "la tua impressione sincera sulla tipologia di spiegazione che ti è stata mostrata."
@@ -1160,7 +1160,10 @@ def page_block():
             st.info("Qui vedi soltanto i dati clinici del paziente e la decisione "
                     "del modello, senza alcuna spiegazione. Osserva con attenzione: "
                     "tra poco dovrai prevedere le decisioni del modello su nuovi "
-                    "casi, avendo a disposizione solo i dati.")
+                    "casi, avendo a disposizione solo i dati."
+                    "Con le freccette in alto a sinistra puoi aprire la finestra " \
+                    "col glossario dei termini medici. Consultalo ogni volta che ne hai bisogno:" \
+                    "il questionario non mira a valutare le competenze mediche.")
         else:
             st.title(f"Parte {pos}/{N_BLOCKS} - Tipo di spiegazione {pos - 1}/3")
             st.info("Osserva con attenzione: tra poco dovrai prevedere le decisioni "
