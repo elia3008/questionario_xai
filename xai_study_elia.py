@@ -432,6 +432,7 @@ INTRO_METODO = {
             " (probabilità media di presentare una malattia cardiaca) e i "
             "contributi di ciascuna variabile portano alla predizione finale "
             "f(x)."
+
         ),
     },
     "DiCE": {
@@ -465,6 +466,13 @@ SATISFACTION_ITEMS = [
 ]
 LIKERT = {1: "1 - Per niente d'accordo", 2: "2", 3: "3 - Neutrale",
           4: "4", 5: "5 - Del tutto d'accordo"}
+
+# La scala ESS e' mostrata come cursore. st.select_slider parte SEMPRE da un
+# valore: senza un segnaposto iniziale non si distinguerebbe chi ha scelto "3"
+# da chi non ha toccato nulla, e la ESS e' una misura principale dello studio.
+# Lo 0 e' quindi lo stato "non ancora risposto" e viene bloccato in validazione.
+NON_RISPOSTO = 0
+LIKERT_SLIDER = {NON_RISPOSTO: "(nessuna risposta)", **LIKERT}
 
 CONFIDENCE = {1: "1 - Per niente sicuro/a", 2: "2", 3: "3", 4: "4",
               5: "5 - Del tutto sicuro/a"}
@@ -741,6 +749,16 @@ def _radio_index(chiave, opzioni):
     if val in opzioni:
         return opzioni.index(val)
     return default_index()
+
+
+def _slider_value(chiave, opzioni, default):
+    """Valore iniziale di un cursore, ripescando l'eventuale risposta salvata.
+
+    Stesso ruolo di _radio_index, ma i cursori vogliono il valore e non
+    l'indice.
+    """
+    val = _answers().get(chiave)
+    return val if val in opzioni else default
 
 
 def _answers():
@@ -1220,7 +1238,7 @@ def page_block():
 
         OPZ_PRED = ["Malato", "Sano"]
         OPZ_CONF = list(CONFIDENCE.keys())
-        OPZ_LIK = list(LIKERT.keys())
+        OPZ_SAT = [NON_RISPOSTO] + list(LIKERT.keys())
 
         sim_answers, conf_answers = {}, {}
         for n, t in enumerate(test_items, start=1):
@@ -1253,12 +1271,17 @@ def page_block():
         sat = {}
         if not is_baseline:
             st.markdown("### Quanto ti è sembrata utile questa spiegazione?")
+            st.caption("Trascina il cursore per rispondere a ogni affermazione.")
+            # in modalita' sviluppo con precompilazione parte da una risposta
+            # valida, altrimenti dal segnaposto "non risposto"
+            iniziale = OPZ_SAT[1] if autofill() else NON_RISPOSTO
             for i, item in enumerate(SATISFACTION_ITEMS):
                 k_sat = f"sat_{pos}_{i}"
-                sat[i] = st.radio(item, options=OPZ_LIK,
-                                  format_func=lambda x: LIKERT[x],
-                                  key=k_sat, horizontal=True,
-                                  index=_radio_index(k_sat, OPZ_LIK))
+                sat[i] = st.select_slider(
+                    item, options=OPZ_SAT,
+                    format_func=lambda x: LIKERT_SLIDER[x],
+                    key=k_sat,
+                    value=_slider_value(k_sat, OPZ_SAT, iniziale))
 
         submitted = st.form_submit_button("Conferma e prosegui")
 
@@ -1291,7 +1314,8 @@ def page_block():
             mancanti.append("i livelli di sicurezza")
         if show_attention and att is None:
             mancanti.append("la domanda di controllo")
-        if not is_baseline and any(v is None for v in sat.values()):
+        if not is_baseline and any(v in (None, NON_RISPOSTO)
+                                   for v in sat.values()):
             mancanti.append("la valutazione della spiegazione")
         _memorizza()
         if mancanti:
