@@ -1022,9 +1022,9 @@ def plot_shap_global():
     plt.close(fig)
 
 def verdetto(pred):
-    """Previsione del modello colorata: Malato in rosso, Sano in verde."""
+    """Previsione del modello evidenziata: Malato in rosso, Sano in verde."""
     colore = "red" if pred == "Malato" else "green"
-    return f":{colore}[**{pred}**]"
+    return f":{colore}-background[**{pred}**]"
 
 def render_example(method, example):
     """UN paziente esempio: verdetto + tabella + (eventuale) spiegazione."""
