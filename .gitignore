@@ -1,0 +1,13 @@
+# MAI su GitHub: contiene le credenziali del service account
+.streamlit/
+
+# dati raccolti in locale
+responses.csv
+participant_counter.txt
+
+# versione precedente, non da pubblicare
+xai_study_elia_vecchio.py
+
+__pycache__/
+*.pyc
+.venv/
