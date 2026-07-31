@@ -1079,13 +1079,14 @@ if "step" not in st.session_state:
 # PAGINE
 # =========================================================================
 def page_consent():
-    st.title("Studio sulla comprensibilità delle spiegazioni di un modello")
+    st.title("Indagine sulla comprensione delle spiegazioni di modelli XAI (Explainable AI)")
     st.write(
-        "Grazie per la partecipazione. In questo studio vedrai le decisioni di un "
-        "modello che stima il rischio di malattia cardiaca e ti verrà chiesto di "
+        "In questo studio vedrai le decisioni di un "
+        "modello che stima il rischio di malattia cardiaca di veri pazienti " \
+        "e ti verrà chiesto di "
         "prevedere alcune sue decisioni e di valutare le spiegazioni che le "
         "accompagnano. La partecipazione è **anonima**, richiede circa "
-        "**20-25 minuti** e puoi interrompere in qualsiasi momento."
+        "**15-20 minuti** e puoi interrompere in qualsiasi momento."
     )
     ok = st.checkbox("Ho letto le informazioni e acconsento a partecipare.")
     if st.button("Inizia", disabled=not ok):
