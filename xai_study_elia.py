@@ -1160,7 +1160,7 @@ def page_block():
             st.info("Qui vedi soltanto i dati clinici del paziente e la decisione "
                     "del modello, senza alcuna spiegazione. Osserva con attenzione: "
                     "tra poco dovrai prevedere le decisioni del modello su nuovi "
-                    "casi, avendo a disposizione solo i dati."
+                    "casi, avendo a disposizione solo i dati.\n\n"
                     "Con le freccette in alto a sinistra puoi aprire la finestra " \
                     "col glossario dei termini medici. Consultalo ogni volta che ne hai bisogno:" \
                     "il questionario non mira a valutare le competenze mediche.")
