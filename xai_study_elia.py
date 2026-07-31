@@ -1162,8 +1162,8 @@ def page_block():
                     "tra poco dovrai prevedere le decisioni del modello su nuovi "
                     "casi, avendo a disposizione solo i dati.\n\n"
                     "Con le freccette in alto a sinistra puoi aprire la finestra " \
-                    "col glossario dei termini medici. Consultalo ogni volta che ne hai bisogno:" \
-                    "il questionario non mira a valutare le competenze mediche.")
+                    "del glossario dei termini medici. Consultalo ogni volta che ne hai bisogno: "
+                    "il questionario non mira a valutare competenze mediche.")
         else:
             st.title(f"Parte {pos}/{N_BLOCKS} - Tipo di spiegazione {pos - 1}/3")
             st.info("Osserva con attenzione: tra poco dovrai prevedere le decisioni "
