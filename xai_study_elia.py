@@ -1103,12 +1103,24 @@ if "step" not in st.session_state:
 def page_consent():
     st.title("Indagine sulla comprensione delle spiegazioni di modelli XAI (Explainable AI)")
     st.write(
-        "In questo studio vedrai le decisioni di un "
-        "modello che stima il rischio di malattia cardiaca di veri pazienti " \
-        "e ti verrà chiesto di "
-        "prevedere alcune sue decisioni e di valutare le spiegazioni che le "
-        "accompagnano. La partecipazione è **anonima**, richiede circa "
-        "**15-20 minuti** e puoi interrompere in qualsiasi momento."
+        "In questo studio lavorerai con un **modello di intelligenza "
+        "artificiale** addestrato su dati clinici di pazienti reali. A partire "
+        "da alcuni valori — età, pressione, colesterolo, esiti di esami del "
+        "cuore — il modello stima se una persona sia malata o sana. "
+        "Restituisce però soltanto la risposta finale, senza dire nulla su "
+        "come ci sia arrivato.\n\n"
+        "Proprio per questo esistono dei **metodi di spiegazione**: strumenti "
+        "separati che prendono una decisione già presa dal modello e provano a "
+        "renderla comprensibile a una persona. Ne esistono di diversi tipi, e "
+        "raccontano la stessa decisione in modi molto diversi tra loro.\n\n"
+        "Vedrai prima alcune decisioni del modello da sole, poi accompagnate "
+        "da tre tipi di spiegazione, uno alla volta. Ogni volta ti chiederemo "
+        "di prevedere come il modello classificherebbe alcuni nuovi pazienti "
+        "e, dove è presente una spiegazione, quanto ti sia sembrata utile.\n\n"
+        "**Non serve alcuna competenza medica.** Non ti chiediamo di fare una "
+        "diagnosi, ma di capire il ragionamento di un sistema automatico.\n\n"
+        "La partecipazione è **anonima**, richiede circa **15-20 minuti** e "
+        "puoi interrompere in qualsiasi momento."
     )
     ok = st.checkbox("Ho letto le informazioni e acconsento a partecipare.")
     if st.button("Inizia", disabled=not ok):
