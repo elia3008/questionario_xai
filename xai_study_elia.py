@@ -1252,7 +1252,7 @@ def render_example(method, example):
         target = "Sano" if example["pred"] == "Malato" else "Malato"
         # testo pieno e non st.caption: la conclusione e' la parte piu'
         # importante della spiegazione controfattuale e deve risaltare
-        st.markdown(f"#### Con queste modifiche la previsione diventerebbe: "
+        st.markdown(f"##### Con queste modifiche la previsione diventerebbe: "
                     f"{verdetto(target)}")
 
     elif method == "Anchors":
