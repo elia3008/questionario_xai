@@ -1099,7 +1099,7 @@ def _pulsante_rivedi_flottante(attivo, testo, cerca="Rivedi"):
             #rivedi-flottante:hover {{ background: #f1f3f5; }}
             @media (max-width: 640px) {{
               #rivedi-flottante {{
-                right: 12px; bottom: 108px;
+                right: 12px; bottom: 60px;
                 padding: 10px 15px; font-size: 14px;
               }}
             }}`;
@@ -1510,11 +1510,11 @@ def page_consent():
         "Restituisce però soltanto la risposta finale, senza dire nulla su "
         "come ci sia arrivato.\n\n"
         "Proprio per questo esistono delle **tecniche di spiegazione**: strumenti "
-        "separati che prendono la decisione presa dal modello e provano a "
+        "separati che analizzano la decisione presa dal modello e provano a "
         "renderla comprensibile a una persona e a rendere chiaro il modo di ragionare del modello. Ne esistono di diversi tipi, e "
         "raccontano la stessa decisione in modi molto diversi tra loro.\n\n"
         "Vedrai prima alcune decisioni del modello da sole, poi accompagnate "
-        "da tre tipi di spiegazione, uno alla volta. Ogni volta ti chiederemo "
+        "da tre tipi di spiegazione, una alla volta. Ogni volta ti chiederemo "
         "di prevedere come il modello classificherebbe alcuni nuovi pazienti "
         "e, dove è presente una spiegazione, quanto ti sia sembrata utile.\n\n"
         "**Non serve alcuna competenza medica.** Non ti chiediamo di fare una "
@@ -1566,8 +1566,7 @@ def page_instructions():
         f"Lo studio è diviso in **{N_BLOCKS} parti**.\n\n"
         "**Nella prima parte** vedrai solo i dati clinici dei pazienti e la "
         "decisione del modello, senza alcuna spiegazione.\n\n"
-        "**Nei tre blocchi successivi** vedrai tre diversi tipi di spiegazione, "
-        "uno alla volta.\n\n"
+        "**Nei tre blocchi successivi** vedrai tre diversi tipi di spiegazione.\n\n"
         "In ogni blocco:\n\n"
         "1. osservi **2 pazienti di esempio** con la decisione del modello e una spiegazione di quella classificazione del paziente come malato o come sano;\n"
         "2. ti mostriamo **5 nuovi pazienti senza la classificazione del modello** e "
