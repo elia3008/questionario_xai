@@ -41,6 +41,7 @@ COME ESEGUIRLO
 
 import itertools
 import os
+import random
 import re
 import time
 import uuid
@@ -58,7 +59,7 @@ import streamlit as st
 st.set_page_config(page_title="Studio XAI", page_icon="🫀", layout="centered")
 
 RESULTS_FILE = "responses.csv"
-COUNTER_FILE = "participant_counter.txt"
+ASSIGN_FILE = "assegnazioni.csv"   # ripiego locale
 
 # --- Google Sheets -------------------------------------------------------
 # Nomi dei due fogli dentro il documento Google
@@ -69,6 +70,10 @@ SHEET_ASSEGNAZIONI = "assegnazioni"
 COLONNE = ["participant_id", "group", "block_sequence", "block_position",
            "method", "qtype", "item", "response", "correct", "confidence",
            "rt_seconds", "timestamp"]
+
+# Colonne del foglio assegnazioni: una riga per ogni questionario COMPLETATO.
+# Serve a verificare che i sei ordini restino bilanciati.
+COLONNE_ASSEGNAZIONI = ["participant_id", "ordine", "gruppo", "timestamp"]
 
 BASELINE = "Baseline"
 METHODS = ["SHAP", "DiCE", "Anchors"]
@@ -705,70 +710,78 @@ def _worksheet(nome, intestazione):
         return None
 
 
-def _numero_riga(risposta_append):
-    """Estrae il numero di riga dalla risposta di append_row di gspread."""
-    try:
-        rng = risposta_append["updates"]["updatedRange"]   # es. "'foglio'!A5:D5"
-        m = re.search(r"![A-Z]+(\d+)", rng)
-        return int(m.group(1)) if m else None
-    except Exception:
-        return None
-
-
 def _cella(v):
     """Converte un valore Python in qualcosa che Google Sheets accetta."""
     return "" if v is None else v
 
 
-def claim_balanced_order():
-    """Assegna un ordine bilanciato dei 3 metodi (rotazione sui 6 ordini).
+def scegli_ordine():
+    """Sceglie l'ordine dei tre metodi da assegnare al partecipante.
 
-    Su Google Sheets aggiunge una riga al foglio 'assegnazioni' e usa il numero
-    di riga restituito da Google come indice del partecipante. L'append e' una
-    singola chiamata API, quindi due partecipanti simultanei ottengono righe
-    diverse: niente race condition, a differenza del contatore su file.
+    L'ordine viene solo SCELTO, non registrato: la riga sul foglio compare
+    quando il questionario viene completato (vedi salva_tutto). Cosi' chi
+    abbandona a meta', o chi ricarica e ricomincia, non consuma
+    un'assegnazione e non sbilancia il conteggio.
 
-    In modalita' sviluppo restituisce sempre il primo ordine senza consumare
-    un'assegnazione.
+    Il criterio non e' piu' una rotazione fissa ma "il meno rappresentato fra
+    i questionari completati": e' auto-correttivo, perche' qualunque
+    squilibrio dovuto ad abbandoni o ad accessi simultanei viene recuperato
+    dalle assegnazioni successive. A parita' di conteggio si sorteggia fra i
+    candidati, cosi' due persone che iniziano nello stesso istante hanno buone
+    probabilita' di ricevere ordini diversi.
     """
     if dev_mode():
         return list(ORDERS[0])
 
-    ws = _worksheet(SHEET_ASSEGNAZIONI,
-                    ["riga", "participant_id", "ordine", "timestamp"])
+    conteggi = {o: 0 for o in ORDERS}
+    ws = _worksheet(SHEET_ASSEGNAZIONI, COLONNE_ASSEGNAZIONI)
     if ws is not None:
         try:
-            ora = datetime.now().isoformat(timespec="seconds")
-            ris = ws.append_row(["", st.session_state.pid, "", ora],
-                                value_input_option="RAW")
-            riga = _numero_riga(ris)
-            if riga is not None:
-                # riga 1 = intestazione, quindi il primo partecipante e' riga 2
-                ordine = list(ORDERS[(riga - 2) % len(ORDERS)])
-                try:   # rispecchio riga e ordine, utile per il monitoraggio
-                    ws.update([[riga]], f"A{riga}", value_input_option="RAW")
-                    ws.update([[">".join(ordine)]], f"C{riga}",
-                              value_input_option="RAW")
-                except Exception:
-                    pass
-                return ordine
+            # colonna "ordine", saltando l'intestazione
+            col = COLONNE_ASSEGNAZIONI.index("ordine") + 1
+            for valore in ws.col_values(col)[1:]:
+                chiave = tuple((valore or "").split(">"))
+                if chiave in conteggi:
+                    conteggi[chiave] += 1
+        except Exception as e:
+            st.session_state.storage_error = f"lettura ordini: {str(e)[:150]}"
+
+    minimo = min(conteggi.values())
+    candidati = [o for o in ORDERS if conteggi[o] == minimo]
+    return list(random.choice(candidati))
+
+
+def registra_assegnazione():
+    """Scrive sul foglio l'ordine ricevuto, a questionario completato.
+
+    Chiamata da salva_tutto insieme alle risposte: le due scritture
+    rappresentano lo stesso evento, cioe' un questionario portato a termine.
+    """
+    blocchi = st.session_state.get("blocks") or []
+    metodi = [b for b in blocchi if b != BASELINE]
+    if not metodi:
+        return
+    riga = {
+        "participant_id": st.session_state.pid,
+        "ordine": ">".join(metodi),
+        "gruppo": st.session_state.get("group") or "",
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+    }
+    ws = _worksheet(SHEET_ASSEGNAZIONI, COLONNE_ASSEGNAZIONI)
+    if ws is not None:
+        try:
+            ws.append_row([_cella(riga[c]) for c in COLONNE_ASSEGNAZIONI],
+                          value_input_option="RAW")
+            return
         except Exception as e:
             st.session_state.storage_error = f"assegnazione: {str(e)[:150]}"
-
-    # --- fallback locale (sviluppo, oppure Sheets non raggiungibile)
-    count = 0
-    if os.path.exists(COUNTER_FILE):
-        try:
-            count = int((open(COUNTER_FILE).read().strip() or "0"))
-        except ValueError:
-            count = 0
-    ordine = list(ORDERS[count % len(ORDERS)])
+    # ripiego locale, utile solo in sviluppo
     try:
-        with open(COUNTER_FILE, "w") as f:
-            f.write(str(count + 1))
+        esiste = os.path.exists(ASSIGN_FILE)
+        pd.DataFrame([riga]).to_csv(ASSIGN_FILE, mode="a",
+                                    header=not esiste, index=False)
     except Exception:
         pass
-    return ordine
 
 
 def log(qtype, method, item, response, correct=None, confidence=None, rt=None):
@@ -846,6 +859,7 @@ def salva_tutto():
             st.session_state.saved = True
             st.session_state.storage = "sheets"
             st.session_state.storage_error = None
+            registra_assegnazione()   # l'ordine si registra solo ora
             return True
         except Exception as e:
             st.session_state.storage_error = f"scrittura: {str(e)[:150]}"
@@ -856,6 +870,7 @@ def salva_tutto():
             header=not os.path.exists(RESULTS_FILE), index=False)
         st.session_state.saved = True
         st.session_state.storage = "local"
+        registra_assegnazione()
         return True
     except Exception as e:
         st.session_state.storage_error = f"csv: {str(e)[:150]}"
@@ -1528,7 +1543,7 @@ def page_consent():
     )
     ok = st.checkbox("Ho letto le informazioni e acconsento a partecipare.")
     if st.button("Inizia", disabled=not ok):
-        st.session_state.blocks = [BASELINE] + claim_balanced_order()
+        st.session_state.blocks = [BASELINE] + scegli_ordine()
         st.session_state.step = "demographics"
         st.rerun()
 
