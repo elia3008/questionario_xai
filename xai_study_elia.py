@@ -1076,7 +1076,7 @@ def _pulsante_rivedi_flottante(attivo, testo):
             #rivedi-flottante:hover {{ background: #f1f3f5; }}
             @media (max-width: 640px) {{
               #rivedi-flottante {{
-                right: 12px; bottom: 108px;
+                right: 12px; bottom: 40px;
                 padding: 10px 15px; font-size: 14px;
               }}
             }}`;
@@ -1604,8 +1604,8 @@ def page_block():
     st.title(f"Parte {pos}/{N_BLOCKS} - Le tue previsioni")
     st.write("Per ogni paziente, prevedi la decisione del modello. "
              "**La decisione del modello non è mostrata.**")
-    st.caption("Ricorda: **Malato** = secondo il modello soffrirà di problemi "
-               "cardiaci · **Sano** = secondo il modello non ne soffrirà.")
+    st.caption("Ricorda: **Malato** = secondo il paziente soffrirà di problemi "
+               "cardiaci · **Sano** = secondo il paziente non ne soffrirà.")
 
     test_items = TESTS[method]
     show_attention = (pos == ATTENTION_CHECK_AT_BLOCK)
