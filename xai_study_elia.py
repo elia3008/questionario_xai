@@ -513,8 +513,8 @@ INTRO_METODO = {
         "testo": (
             "In questa sezione il modello mostra le sue previsioni insieme a "
             "una spiegazione di tipo \"controfattuale\": una tabella che indica "
-            "quali valori dovrebbero essere diversi, e in che modo, perché il "
-            "modello cambiasse la propria previsione."
+            "quali valori dovrebbero cambiare, e in che modo, per far cambiare "
+            "la previsione del modello."
         ),
     },
     "Anchors": {
@@ -1243,14 +1243,17 @@ def render_example(method, example):
         plot_shap_local(example)
 
     elif method == "DiCE":
-        st.markdown("**Cosa cambierebbe la previsione (scenario 'what-if'):**")
+        st.markdown("##### Cosa cambierebbe la previsione (scenario \"what-if\")")
         rows = [(FEATURE_LABEL[f], meaning(f, cur), meaning(f, alt))
                 for f, cur, alt in DICE_CF[eid]]
         st.table(pd.DataFrame(
             rows, columns=["Variabile", "Valore attuale", "Valore alternativo"]
         ).set_index("Variabile"))
         target = "Sano" if example["pred"] == "Malato" else "Malato"
-        st.caption(f"Con queste modifiche la previsione diventerebbe: {verdetto(target)}.")
+        # testo pieno e non st.caption: la conclusione e' la parte piu'
+        # importante della spiegazione controfattuale e deve risaltare
+        st.markdown(f"#### Con queste modifiche la previsione diventerebbe: "
+                    f"{verdetto(target)}")
 
     elif method == "Anchors":
         a = ANCHORS_RULE[eid]
@@ -1292,7 +1295,8 @@ def page_consent():
         "In questo studio lavorerai con un **modello di machine "
         "learning** addestrato su dati clinici di pazienti reali. A partire "
         "da alcuni valori — età, pressione, colesterolo, esiti di esami del "
-        "cuore — il modello stima se una persona sia malata o sana. "
+        "cuore — il modello stima se quella persona sia destinata a soffrire "
+        "di problemi cardiaci (**MALATO**) oppure no (**SANO**). "
         "Restituisce però soltanto la risposta finale, senza dire nulla su "
         "come ci sia arrivato.\n\n"
         "Proprio per questo esistono delle **tecniche di spiegazione**: strumenti "
@@ -1361,7 +1365,15 @@ def page_instructions():
         "3. alla fine di ogni blocco ti verrà chiesto di valutare quanto la spiegazione ti è "
         "sembrata utile.\n\n"
         "Non esistono risposte 'giuste' nella parte di valutazione: ci interessa "
-        "la tua impressione sincera sulla tipologia di spiegazione che ti è stata mostrata."
+        "la tua impressione sincera sulla tipologia di spiegazione che ti è stata mostrata.\n\n"
+        "---\n\n"
+        "**Cosa significano le due risposte del modello**\n\n"
+        "- **MALATO**: secondo il modello quella persona è destinata a "
+        "soffrire di problemi cardiaci.\n"
+        "- **SANO**: secondo il modello quella persona non ne soffrirà.\n\n"
+        "Attenzione: si tratta della previsione del modello, non di una "
+        "diagnosi medica. A te chiediamo di indovinare che cosa risponderebbe "
+        "il modello, non che cosa sia giusto dal punto di vista clinico."
     )
     if st.button("Ho capito, inizia"):
         st.session_state.step = "block"
@@ -1421,6 +1433,8 @@ def page_block():
     st.title(f"Parte {pos}/{N_BLOCKS} - Le tue previsioni")
     st.write("Per ogni paziente, prevedi la decisione del modello. "
              "**La decisione del modello non è mostrata.**")
+    st.caption("Ricorda: **Malato** = secondo il modello soffrirà di problemi "
+               "cardiaci · **Sano** = secondo il modello non ne soffrirà.")
 
     test_items = TESTS[method]
     show_attention = (pos == ATTENTION_CHECK_AT_BLOCK)
