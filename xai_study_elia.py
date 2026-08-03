@@ -452,6 +452,18 @@ ANCHORS_TESTS = [
 # Nota anche: A_EX_sano (id41) coincide con B_T4, item di test della baseline.
 
 # =========================================================================
+# VARIABILI OMESSE IN PIU' NEI BLOCCHI DiCE E ANCHORS
+# =========================================================================
+# Oltre a HIDE_DEFAULT, questi due blocchi omettono anche l'angina da sforzo:
+# non compare in nessuno dei loro controfattuali ne' nelle loro regole, quindi
+# toglierla accorcia il profilo senza rendere incomprensibile la spiegazione.
+# Resta invece visibile in SHAP, dove il grafico le assegna un contributo.
+# La chiave "hide" viene assegnata qui, in un punto solo, invece di ripeterla
+# su ognuno dei quattordici pazienti.
+for _p in DICE_EXAMPLES + DICE_TESTS + ANCHORS_EXAMPLES + ANCHORS_TESTS:
+    _p["hide"] = HIDE_DEFAULT + ["exang"]
+
+# =========================================================================
 # MAPPE BLOCCO -> MATERIALE
 # =========================================================================
 EXAMPLES = {
