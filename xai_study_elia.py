@@ -458,9 +458,17 @@ ANCHORS_TESTS = [
 # non compare in nessuno dei loro controfattuali ne' nelle loro regole, quindi
 # toglierla accorcia il profilo senza rendere incomprensibile la spiegazione.
 # Resta invece visibile in SHAP, dove il grafico le assegna un contributo.
-# La chiave "hide" viene assegnata qui, in un punto solo, invece di ripeterla
-# su ognuno dei quattordici pazienti.
-for _p in DICE_EXAMPLES + DICE_TESTS + ANCHORS_EXAMPLES + ANCHORS_TESTS:
+#
+# DiCE tiene in piu' la pressione a riposo: i suoi controfattuali la usano, e i
+# pazienti di test devono mostrare le stesse variabili degli esempi, altrimenti
+# il partecipante non ritrova nel profilo cio' su cui ha imparato a ragionare.
+#
+# Le chiavi "hide" sono assegnate qui, in un punto solo, invece di ripeterle su
+# ognuno dei quattordici pazienti.
+for _p in DICE_EXAMPLES + DICE_TESTS:
+    _p["hide"] = [f for f in HIDE_DEFAULT if f != "trestbps"] + ["exang"]
+
+for _p in ANCHORS_EXAMPLES + ANCHORS_TESTS:
     _p["hide"] = HIDE_DEFAULT + ["exang"]
 
 # =========================================================================
