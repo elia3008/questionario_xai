@@ -901,30 +901,29 @@ def _salva_risposte(mappa):
             salvate[chiave] = valore
 
 
+def ancora(nome):
+    """Punto di riferimento invisibile a cui la pagina puo' tornare.
+
+    Si usa un'ancora e non una posizione in pixel: il numero di pixel dipende
+    da quanto e' alta la pagina nell'istante in cui si scorre, e al rientro
+    Streamlit ridisegna tutto da capo — per qualche istante il contenuto e'
+    piu' corto e lo scroll verrebbe troncato. Un'ancora invece resta valida
+    comunque, e basta aspettare che l'elemento compaia.
+    """
+    st.markdown(f'<span id="{nome}" style="display:block;height:0"></span>',
+                unsafe_allow_html=True)
+
+
 def _scroll_pagina(modo, traccia):
-    """Gestisce la posizione della pagina dopo un cambio di schermata.
+    """Sistema la posizione della pagina dopo un cambio di schermata.
 
     modo:
       "cima"       riporta in alto (comportamento normale)
-      "ripristina" torna al punto in cui il partecipante aveva lasciato le
-                   domande, usato quando rientra dopo aver rivisto le
-                   spiegazioni
+      "ripristina" torna all'ancora memorizzata, cioe' al paziente che il
+                   partecipante stava guardando quando ha premuto "Rivedi"
 
-    traccia: se True tiene aggiornata la posizione memorizzata. Va attivato
-    solo nella fase domande, cosi' il valore non viene sovrascritto scorrendo
-    la pagina delle spiegazioni.
-
-    Due accorgimenti rendono affidabile il ripristino:
-
-    1. la posizione viene salvata sia in continuo (evento scroll) sia al
-       momento del click su "Rivedi" — quest'ultimo e' il valore che conta
-       davvero, ed e' immune a eventuali eventi di scroll mancati;
-
-    2. il ripristino non viene tentato poche volte a tempo fisso, ma ripetuto
-       finche' la posizione non e' raggiunta: al rientro Streamlit ridisegna
-       tutto da capo e per qualche istante la pagina e' piu' corta di quanto
-       sara', quindi un tentativo anticipato verrebbe troncato in fondo alla
-       pagina ancora incompleta.
+    traccia: se True tiene aggiornata l'ancora memorizzata. Va attivato solo
+    nella fase domande, cosi' il valore non cambia scorrendo le spiegazioni.
     """
     n = st.session_state.get("_scroll_n", 0) + 1
     st.session_state["_scroll_n"] = n
@@ -936,9 +935,7 @@ def _scroll_pagina(modo, traccia):
         const doc = w && w.document;
         if (!doc) return;
 
-        // il contenitore che scorre davvero cambia con le versioni di
-        // Streamlit: si prova in ordine e si tiene il primo il cui contenuto
-        // supera l'altezza visibile
+        // il contenitore che scorre cambia con le versioni di Streamlit
         const candidati = () => [
           doc.querySelector('section.main'),
           doc.querySelector('[data-testid="stMain"]'),
@@ -947,70 +944,84 @@ def _scroll_pagina(modo, traccia):
           doc.scrollingElement, doc.documentElement, doc.body
         ].filter(Boolean);
 
-        const scrollabile = () => {{
-          for (const el of candidati()) {{
-            if (el.scrollHeight > el.clientHeight + 8) return el;
+        // l'ancora attualmente in cima allo schermo: si prende l'ultima che
+        // ha superato il bordo superiore, con un margine di tolleranza
+        const ancoraVisibile = () => {{
+          const tutte = doc.querySelectorAll('[id^="paz-"]');
+          let scelta = null;
+          for (const a of tutte) {{
+            if (a.getBoundingClientRect().top <= 120) scelta = a.id;
           }}
-          return doc.scrollingElement || doc.documentElement;
+          return scelta;
         }};
 
-        const posizione = () => {{
-          let p = w.scrollY || 0;
-          for (const el of candidati()) p = Math.max(p, el.scrollTop || 0);
-          return p;
-        }};
+        // ---- memorizzazione, installata una volta sola ----
+        if (!w.__ancoraInit) {{
+          w.__ancoraInit = true;
+          w.__ancora = null;
 
-        // ---- salvataggio, installato una volta sola ----
-        if (!w.__scrollInit) {{
-          w.__scrollInit = true;
-          w.__scrollSalvato = 0;
+          const aggiorna = () => {{
+            if (!w.__tracciaAncora) return;
+            const a = ancoraVisibile();
+            if (a) w.__ancora = a;
+          }};
+          w.addEventListener('scroll', aggiorna, true);
+          doc.addEventListener('scroll', aggiorna, true);
 
-          // in continuo, mentre si scorre il quiz
-          const salva = () => {{ if (w.__tracciaScroll) w.__scrollSalvato = posizione(); }};
-          w.addEventListener('scroll', salva, true);
-          doc.addEventListener('scroll', salva, true);
-
-          // e soprattutto al click su "Rivedi": e' il momento esatto in cui
-          // serve fotografare la posizione, sia dal pulsante del modulo sia
-          // dal gemello flottante
+          // al click su "Rivedi" si fotografa il punto: e' l'istante che conta
           doc.addEventListener('click', function (ev) {{
             const b = ev.target && ev.target.closest && ev.target.closest('button');
             if (!b) return;
             if (((b.innerText || '').trim()).indexOf('Rivedi') === -1) return;
-            w.__scrollSalvato = posizione();
+            const a = ancoraVisibile();
+            if (a) w.__ancora = a;
           }}, true);
         }}
-        w.__tracciaScroll = {str(bool(traccia)).lower()};
+        w.__tracciaAncora = {str(bool(traccia)).lower()};
 
         // ---- spostamento ----
-        const meta = {'w.__scrollSalvato || 0' if modo == "ripristina" else '0'};
         if (w.__scrollTimer) {{ clearInterval(w.__scrollTimer); w.__scrollTimer = null; }}
 
-        const vai = () => {{
+        const inCima = () => {{
           for (const el of candidati()) {{
-            try {{ el.scrollTo({{top: meta, left: 0, behavior: 'instant'}}); }}
-            catch (e) {{ el.scrollTop = meta; }}
+            try {{ el.scrollTo({{top: 0, left: 0, behavior: 'instant'}}); }}
+            catch (e) {{ el.scrollTop = 0; }}
           }}
-          try {{ w.scrollTo(0, meta); }} catch (e) {{}}
+          try {{ w.scrollTo(0, 0); }} catch (e) {{}}
         }};
 
-        vai();
-        if (meta <= 0) {{ requestAnimationFrame(vai); setTimeout(vai, 120); return; }}
+        const modo = "{modo}";
+        if (modo !== "ripristina") {{
+          inCima();
+          requestAnimationFrame(inCima);
+          setTimeout(inCima, 120);
+          return;
+        }}
 
-        // si insiste finche' la pagina non e' cresciuta abbastanza da
-        // permettere di raggiungere il punto, al massimo per ~4 secondi
+        // ripristino: si aspetta che l'ancora esista davvero nella pagina
+        // appena ridisegnata, poi ci si porta sopra
+        const bersaglio = w.__ancora;
+        if (!bersaglio) {{ inCima(); return; }}
+
         let tentativi = 0;
+        let riuscito = false;
         w.__scrollTimer = setInterval(function () {{
           tentativi++;
-          vai();
-          const arrivato = Math.abs(posizione() - meta) <= 4;
-          if (arrivato || tentativi > 80) {{
+          const el = doc.getElementById(bersaglio);
+          if (el) {{
+            try {{
+              el.scrollIntoView({{block: 'start', behavior: 'instant'}});
+              riuscito = true;
+            }} catch (e) {{}}
+          }}
+          // si continua un poco anche dopo il primo successo: la pagina puo'
+          // crescere ancora e spostare l'elemento
+          if ((riuscito && tentativi > 24) || tentativi > 100) {{
             clearInterval(w.__scrollTimer);
             w.__scrollTimer = null;
           }}
         }}, 50);
 
-        // se nel frattempo il partecipante scorre da solo, si smette subito
         const stop = () => {{
           if (w.__scrollTimer) {{
             clearInterval(w.__scrollTimer);
@@ -1018,7 +1029,6 @@ def _scroll_pagina(modo, traccia):
           }}
         }};
         w.addEventListener('wheel', stop, {{once: true, passive: true}});
-        w.addEventListener('touchstart', stop, {{once: true, passive: true}});
       }})();
     </script>
     """
@@ -1031,8 +1041,11 @@ def _scroll_pagina(modo, traccia):
         components.html(html, height=0)
 
 
-def _pulsante_rivedi_flottante(attivo, testo):
-    """Pulsante fisso in basso a destra che riporta alle spiegazioni.
+def _pulsante_rivedi_flottante(attivo, testo, cerca="Rivedi"):
+    """Pulsante fisso in basso a destra che aziona un pulsante del modulo.
+
+    'cerca' e' il testo (o un suo pezzo) del pulsante vero da premere: nella
+    fase domande e' "Rivedi", nella pagina delle spiegazioni "Riprendi".
 
     Il pulsante vero e' un form_submit_button in cima al modulo: scorrendo tra
     i cinque pazienti sparisce dalla vista, e per rivedere la spiegazione
@@ -1043,12 +1056,13 @@ def _pulsante_rivedi_flottante(attivo, testo):
     script, che e' alto un pixel e lo ritaglierebbe) e rimosso quando non
     serve piu'. L'id univoco impedisce che se ne accumulino piu' copie.
     """
-    stato = f"{attivo}|{testo}"
+    stato = f"{attivo}|{testo}|{cerca}"
     if st.session_state.get("_flottante") == stato:
         return                       # gia' nello stato giusto: non reiniettare
     st.session_state["_flottante"] = stato
 
     etichetta = testo.replace("'", "\\'")
+    bersaglio = cerca.replace("'", "\\'")
     html = f"""
     <script>
       (function () {{
@@ -1094,7 +1108,7 @@ def _pulsante_rivedi_flottante(attivo, testo):
           for (const x of tutti) {{
             if (x.id === 'rivedi-flottante') continue;
             const t = (x.innerText || '').trim();
-            if (t.indexOf('Rivedi') !== -1) {{ x.click(); return; }}
+            if (t.indexOf('{bersaglio}') !== -1) {{ x.click(); return; }}
           }}
         }};
         d.body.appendChild(b);
@@ -1160,11 +1174,10 @@ def _scroll_se_cambio_pagina():
     in_domande = (st.session_state.get("step") == "block"
                   and st.session_state.get("block_phase") == "questions")
 
-    # Si torna al punto lasciato solo rientrando nelle domande dopo aver
-    # premuto "Rivedi": in quel caso revisits e' maggiore di zero. Arrivando
-    # alle domande per la prima volta, o entrando in un blocco nuovo (dove
-    # revisits riparte da zero), si comincia invece dall'inizio.
-    riprendi = in_domande and st.session_state.get("revisits", 0) > 0
+    # Si torna al punto lasciato solo se il partecipante ha scelto
+    # esplicitamente "Riprendi da dove ero": tutti gli altri percorsi verso le
+    # domande cominciano dall'intestazione.
+    riprendi = in_domande and st.session_state.get("riprendi_punto", False)
     _scroll_pagina("ripristina" if riprendi else "cima", traccia=in_domande)
 
 
@@ -1188,6 +1201,7 @@ def _inizia_blocco():
     st.session_state.block_phase = "exposure"
     st.session_state.answers = {}
     st.session_state.revisits = 0
+    st.session_state.riprendi_punto = False
     st.session_state.t_exposure = 0.0
     st.session_state.t_questions = 0.0
     st.session_state.t_phase = time.time()
@@ -1451,6 +1465,7 @@ if "step" not in st.session_state:
     st.session_state.storage_error = None
     st.session_state.answers = {}        # risposte salvate (sopravvivono ai widget)
     st.session_state.revisits = 0        # quante volte e' tornato a rivedere
+    st.session_state.riprendi_punto = False
     st.session_state.t_exposure = 0.0    # tempo accumulato in esposizione
     st.session_state.t_questions = 0.0   # tempo accumulato sulle domande
     st.session_state.t_start = time.time()
@@ -1592,20 +1607,42 @@ def page_block():
             if i < len(esempi):
                 st.divider()
 
-        avanti = ("Torna alle domande" if st.session_state.revisits > 0
-                  else "Ho capito, passo alle domande")
-        if st.button(avanti):
+        # Due strade per tornare alle domande, con compiti distinti:
+        #   - "dall'inizio" riparte dal primo paziente
+        #   - "riprendi" torna al paziente che si stava guardando
+        # Il secondo compare solo se ci si e' arrivati premendo "Rivedi", ed e'
+        # anche il pulsante che aziona il gemello flottante.
+        di_ritorno = st.session_state.revisits > 0
+
+        def _vai_alle_domande(riprendi):
             _accumula_tempo("exposure")
+            st.session_state.riprendi_punto = riprendi
             st.session_state.block_phase = "questions"
             st.rerun()
+
+        # gemello ancorato allo schermo, cosi' non serve scorrere fino in fondo
+        _pulsante_rivedi_flottante(di_ritorno, "↩︎ Riprendi da dove ero",
+                                   cerca="Riprendi")
+
+        if di_ritorno:
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("↩︎ Riprendi da dove ero"):
+                    _vai_alle_domande(True)
+            with c2:
+                if st.button("Torna alle domande dall'inizio"):
+                    _vai_alle_domande(False)
+        else:
+            if st.button("Ho capito, passo alle domande"):
+                _vai_alle_domande(False)
         return
 
     # --------------------- FASE 2: simulatability (+ ESS se non baseline)
     st.title(f"Parte {pos}/{N_BLOCKS} - Le tue previsioni")
     st.write("Per ogni paziente, prevedi la decisione del modello. "
              "**La decisione del modello non è mostrata.**")
-    st.caption("Ricorda: **Malato** = secondo il paziente soffrirà di problemi "
-               "cardiaci · **Sano** = secondo il paziente non ne soffrirà.")
+    st.caption("Ricorda: **Malato** = secondo il modello soffrirà di problemi "
+               "cardiaci · **Sano** = secondo il modello non ne soffrirà.")
 
     test_items = TESTS[method]
     show_attention = (pos == ATTENTION_CHECK_AT_BLOCK)
@@ -1629,6 +1666,7 @@ def page_block():
 
         sim_answers, conf_answers = {}, {}
         for n, t in enumerate(test_items, start=1):
+            ancora(f"paz-{pos}-{n:02d}")
             st.markdown(f"#### Paziente {n} di {len(test_items)}")
             features_table(t["values"], visible_features(t))
             k_sim = f"sim_{pos}_{t['id']}"
@@ -1910,10 +1948,11 @@ _scroll_se_cambio_pagina()
 # l'avviso di uscita resta attivo durante tutto il questionario e sparisce
 # quando il partecipante ha finito
 _avvisa_prima_di_uscire(st.session_state.step not in ("consent", "done"))
-# il pulsante flottante esiste solo nella fase domande: qui lo si rimuove da
-# tutte le altre schermate, poi page_block lo ricrea dove serve
-if not (st.session_state.step == "block"
-        and st.session_state.get("block_phase") == "questions"):
+# Il pulsante flottante serve solo dentro i blocchi (per rivedere la
+# spiegazione dalle domande, o per riprendere dal punto lasciato tornando alle
+# domande). Qui lo si rimuove dalle altre schermate; page_block lo ricrea dove
+# serve, con l'etichetta giusta.
+if st.session_state.step != "block":
     _pulsante_rivedi_flottante(False, "")
 glossary_sidebar()
 dev_sidebar()
