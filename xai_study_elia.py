@@ -1076,7 +1076,7 @@ def _pulsante_rivedi_flottante(attivo, testo):
             #rivedi-flottante:hover {{ background: #f1f3f5; }}
             @media (max-width: 640px) {{
               #rivedi-flottante {{
-                right: 12px; bottom: 40px;
+                right: 12px; bottom: 50px;
                 padding: 10px 15px; font-size: 14px;
               }}
             }}`;
