@@ -158,6 +158,49 @@ CATEGORICAL_MEANING = {
 }
 
 
+# Variabili omesse di default da TUTTI i profili, per alleggerire la lettura.
+# Sono le tre che nei nostri esempi non compaiono mai nelle spiegazioni e che
+# hanno il contributo SHAP piu' vicino a zero.
+# Un singolo paziente puo' sovrascrivere l'elenco con la chiave "hide".
+HIDE_DEFAULT = ["fbs", "trestbps", "restecg"]
+
+
+def _feature_citate(paziente):
+    """Variabili nominate dalla spiegazione di questo paziente.
+
+    Non vanno mai nascoste, altrimenti la spiegazione parlerebbe di un valore
+    che il partecipante non trova da nessuna parte nella tabella.
+    """
+    eid = paziente.get("id")
+    citate = set()
+    for f, _, _ in DICE_CF.get(eid, ()):        # controfattuali DiCE
+        citate.add(f)
+    regola = ANCHORS_RULE.get(eid)              # regole Anchors
+    if regola:
+        testo = " ".join(regola["rule"]).lower()
+        for f in FEATURES:
+            # confronto sul nome completo, cosi' "Pressione" non finisce per
+            # sbaglio dentro "Depressione"
+            if FEATURE_SHORT[f].lower() in testo:
+                citate.add(f)
+    return citate
+
+
+def visible_features(paziente):
+    """Le variabili da mostrare per un paziente, nell'ordine standard.
+
+    Parte da HIDE_DEFAULT, salvo che il paziente indichi un proprio "hide", e
+    rimette comunque in vista le variabili citate dalla sua spiegazione.
+
+    ATTENZIONE nel blocco SHAP: il waterfall parte da E[f(X)] e somma i
+    contributi fino a f(x). Nascondendo variabili la somma cambia, e f(x) non
+    corrisponde piu' alla probabilita' reale del modello — a meno che i
+    contributi omessi si annullino. Se ne occupa _verifica_shap_nascoste().
+    """
+    nascoste = set(paziente.get("hide", HIDE_DEFAULT)) - _feature_citate(paziente)
+    return [f for f in FEATURES if f not in nascoste]
+
+
 def _num(v):
     """Formatta un numero senza zeri inutili: 0.0 -> '0', 1.90 -> '1.9'."""
     f = float(v)
@@ -234,12 +277,22 @@ BASELINE_TESTS = [
 # =========================================================================
 # BLOCCO SHAP - ESEMPI         (dati definitivi)
 # =========================================================================
+# I profili omettono le variabili elencate in HIDE_DEFAULT (glicemia, pressione
+# a riposo, ECG a riposo), per alleggerire la lettura. Sul waterfall questo
+# sposta leggermente il valore finale:
+#   id18 -> contributi omessi +0.02  =>  f(x) mostrato 0.895 invece di 0.915
+#   id10 -> contributi omessi  0.00  =>  f(x) mostrato 0.255, invariato
+# Lo scarto e' impercettibile per chi non conosce il valore vero, ma va
+# dichiarato tra le scelte di disegno. _verifica_shap_nascoste() lo segnala in
+# modalita' sviluppo.
 SHAP_EXAMPLES = [
-    {"id": "S_EX_malato", "pred": "Malato", "values": {   # id18,  f(x) = 0.92
+    {"id": "S_EX_malato", "pred": "Malato",               # id18,  f(x) = 0.92
+     "values": {
         "age": 63, "sex": 1, "cp": 4, "trestbps": 140, "chol": 187, "fbs": 0,
         "restecg": 2, "thalach": 144, "exang": 1, "oldpeak": 4,
         "slope": 1, "ca": 2, "thal": 7}},
-    {"id": "S_EX_sano", "pred": "Sano", "values": {       # id10,  f(x) = 0.25
+    {"id": "S_EX_sano", "pred": "Sano",                   # id10,  f(x) = 0.25
+     "values": {
         "age": 68, "sex": 0, "cp": 3, "trestbps": 120, "chol": 211, "fbs": 0,
         "restecg": 2, "thalach": 115, "exang": 0, "oldpeak": 1.5,
         "slope": 2, "ca": 0, "thal": 3}},
@@ -869,11 +922,15 @@ def _inizia_blocco():
     st.session_state.t_phase = time.time()
 
 
-def features_table(values):
-    """Tabella a 2 colonne: Variabile | Valore (testo leggibile), tutte 13."""
+def features_table(values, feats=None):
+    """Tabella a 2 colonne: Variabile | Valore (testo leggibile).
+
+    feats: elenco delle variabili da mostrare. Se None le mostra tutte.
+    """
+    feats = FEATURES if feats is None else feats
     df = pd.DataFrame({
-        "Variabile": [FEATURE_LABEL[f] for f in FEATURES],
-        "Valore":    [meaning(f, values[f]) for f in FEATURES],
+        "Variabile": [FEATURE_LABEL[f] for f in feats],
+        "Valore":    [meaning(f, values[f]) for f in feats],
     }).set_index("Variabile")
     st.table(df)
 
@@ -881,10 +938,16 @@ def features_table(values):
 def _shap_sorted(example):
     """Contributi ordinati per |valore| decrescente (il piu' grande in alto).
 
+    Esclude le variabili nascoste per questo paziente, cosi' il grafico mostra
+    esattamente le stesse righe della tabella del profilo.
+
     sorted() e' stabile: a parita' di valore assoluto vince l'ordine con cui
     le feature sono scritte in SHAP_LOCAL.
     """
-    return sorted(SHAP_LOCAL[example["id"]].items(), key=lambda kv: -abs(kv[1]))
+    mostrate = set(visible_features(example))
+    contributi = {f: v for f, v in SHAP_LOCAL[example["id"]].items()
+                  if f in mostrate}
+    return sorted(contributi.items(), key=lambda kv: -abs(kv[1]))
 
 
 def _left_labels(ax, rows, values):
@@ -904,6 +967,25 @@ def _left_labels(ax, rows, values):
             pacco, (0.0, y), xybox=(-10, 0),
             xycoords=("axes fraction", "data"), boxcoords="offset points",
             box_alignment=(1.0, 0.5), frameon=False, annotation_clip=False))
+
+
+def _verifica_shap_nascoste(example):
+    """Avvisa se le variabili nascoste alterano il valore finale f(x).
+
+    Nascondere variabili nel waterfall e' innocuo solo se i loro contributi si
+    annullano: altrimenti la somma delle barre non arriva piu' alla probabilita'
+    vera del modello, e il grafico direbbe una cosa falsa. L'avviso compare solo
+    in modalita' sviluppo, cosi' i partecipanti non lo vedono mai.
+    """
+    nascoste = set(example.get("hide", ()))
+    if not nascoste or not dev_mode():
+        return
+    scarto = sum(v for f, v in SHAP_LOCAL[example["id"]].items() if f in nascoste)
+    if abs(scarto) > 0.005:
+        st.warning(
+            f"⚠️ {example['id']}: i contributi nascosti sommano {scarto:+.2f}, "
+            f"quindi f(x) mostrato differisce di {scarto:+.2f} dalla probabilita' "
+            "reale del modello. Scegli variabili i cui contributi si annullino.")
 
 
 def plot_shap_waterfall(example):
@@ -1048,13 +1130,14 @@ def render_example(method, example):
     """UN paziente esempio: verdetto + tabella + (eventuale) spiegazione."""
     eid = example["id"]
     st.markdown(f"**Previsione del modello:** {verdetto(example['pred'])}")
-    features_table(example["values"])
+    features_table(example["values"], visible_features(example))
 
     if method == BASELINE:
         return  # nessuna spiegazione: solo il verdetto nudo
 
     if method == "SHAP":
         st.markdown("**Quanto ha pesato ogni variabile su questa decisione:**")
+        _verifica_shap_nascoste(example)
         plot_shap_local(example)
 
     elif method == "DiCE":
@@ -1255,7 +1338,7 @@ def page_block():
         sim_answers, conf_answers = {}, {}
         for n, t in enumerate(test_items, start=1):
             st.markdown(f"#### Paziente {n} di {len(test_items)}")
-            features_table(t["values"])
+            features_table(t["values"], visible_features(t))
             k_sim = f"sim_{pos}_{t['id']}"
             sim_answers[t["id"]] = st.radio(
                 "Secondo te il modello prevede:", OPZ_PRED,
