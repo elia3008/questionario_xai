@@ -550,6 +550,41 @@ LIKERT_SLIDER = {NON_RISPOSTO: "(nessuna risposta)", **LIKERT}
 CONFIDENCE = {1: "1 - Per niente sicuro/a", 2: "2", 3: "3", 4: "4",
               5: "5 - Del tutto sicuro/a"}
 
+# =========================================================================
+# CLASSIFICAZIONE TECNICI / NON TECNICI
+# =========================================================================
+BG_STAT = "Statistica / Informatica / Data science / Machine learning"
+BG_STEM = "Altro ambito STEM (scienza, tecnologia, ingegneria o matematica)"
+BG_ALTRO = "Altro"
+BACKGROUNDS = [BG_STAT, BG_STEM, BG_ALTRO]
+
+FAMILIARITA = ["Nessuna", "Poca", "Media", "Buona", "Molta"]
+
+
+def classifica_gruppo(bg, fam):
+    """Assegna il partecipante al gruppo 'tecnico' o 'non_tecnico'.
+
+    La soglia di familiarita' richiesta si abbassa man mano che il background
+    si avvicina all'ambito:
+      - background statistico/informatico -> sempre tecnico;
+      - altro ambito STEM                 -> tecnico da 'Poca' in su;
+      - altro                             -> tecnico solo con 'Buona' o 'Molta'.
+
+    Nel foglio finiscono comunque le risposte grezze (background e
+    familiarita'), quindi in fase di analisi si puo' riclassificare con un
+    criterio diverso senza rifare la raccolta.
+    """
+    def almeno(livello):
+        return FAMILIARITA.index(fam) >= FAMILIARITA.index(livello)
+
+    if bg == BG_STAT:
+        tecnico = True
+    elif bg == BG_STEM:
+        tecnico = almeno("Poca")
+    else:
+        tecnico = almeno("Buona")
+    return "tecnico" if tecnico else "non_tecnico"
+
 
 # =========================================================================
 # FUNZIONI DI SUPPORTO
@@ -1290,20 +1325,18 @@ def page_demographics():
     age = st.selectbox("Fascia d'età", ["18-24", "25-34", "35-49", "50+"])
     bg = st.radio(
         "Qual è il tuo background di studio/lavoro?",
-        ["Statistica / Informatica / Data science / Machine learning",
-         "Altro ambito (nessuna formazione in ML/statistica)"],
+        BACKGROUNDS,
     )
     fam = st.select_slider(
         "Quanta familiarità hai con i modelli di machine learning?",
-        options=["Nessuna", "Poca", "Media", "Buona", "Molta"], value="Nessuna",
+        options=FAMILIARITA, value=FAMILIARITA[0],
     )
     med = st.radio(
         "Hai una formazione in ambito medico o sanitario?",
         ["No", "Sì"], horizontal=True,
     )
     if st.button("Prosegui"):
-        tecnico = bg.startswith("Statistica") or fam in ("Buona", "Molta")
-        st.session_state.group = "tecnico" if tecnico else "non_tecnico"
+        st.session_state.group = classifica_gruppo(bg, fam)
         log("demographics", "-", "age", age)
         log("demographics", "-", "background", bg)
         log("demographics", "-", "familiarity", fam)
@@ -1324,8 +1357,7 @@ def page_instructions():
         "In ogni blocco:\n\n"
         "1. osservi **2 pazienti di esempio** con la decisione del modello e una spiegazione di quella classificazione del paziente come malato o come sano;\n"
         "2. ti mostriamo **5 nuovi pazienti senza la classificazione del modello** e "
-        "provi tu a prevederla, sulla base di quello che hai capito "
-        "dalla spiegazione, esprimendo il livello di certezza nella risposta;\n"
+        "provi tu a prevederla, esprimendo il livello di sicurezza nella risposta;\n"
         "3. alla fine di ogni blocco ti verrà chiesto di valutare quanto la spiegazione ti è "
         "sembrata utile.\n\n"
         "Non esistono risposte 'giuste' nella parte di valutazione: ci interessa "
