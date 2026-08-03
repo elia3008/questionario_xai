@@ -177,12 +177,10 @@ def _feature_citate(paziente):
         citate.add(f)
     regola = ANCHORS_RULE.get(eid)              # regole Anchors
     if regola:
-        testo = " ".join(regola["rule"]).lower()
-        for f in FEATURES:
-            # confronto sul nome completo, cosi' "Pressione" non finisce per
-            # sbaglio dentro "Depressione"
-            if FEATURE_SHORT[f].lower() in testo:
-                citate.add(f)
+        # la variabile e' dichiarata nella coppia, non dedotta dal testo:
+        # riscrivere le condizioni non puo' rompere la corrispondenza
+        for feat, _ in regola["rule"]:
+            citate.add(feat)
     return citate
 
 
@@ -412,14 +410,21 @@ ANCHORS_EXAMPLES = [
 
 # Regole Anchors. 'precision' = quota di pazienti simili in cui la regola e'
 # corretta; 'coverage' = quota di pazienti a cui la regola si applica.
+#
+# Ogni condizione e' una coppia (variabile, testo): la variabile serve al
+# codice — cosi' visible_features() sa che quella riga non va nascosta dal
+# profilo — mentre il testo e' quello che legge il partecipante e puo' essere
+# riscritto liberamente senza rompere nulla.
 ANCHORS_RULE = {
-    "A_EX_malato": {"rule": ["Freq. cardiaca max <= 133.25",
-                             "Depressione tratto ST > 1.6",
-                             "Test al tallio = Difetto reversibile"],
+    "A_EX_malato": {"rule": [
+                        ("thalach", "Frequenza cardiaca massima minore o uguale a 133,25 bpm"),
+                        ("oldpeak", "Depressione del tratto ST maggiore di 1,6 mm"),
+                        ("thal",    "Test al tallio: difetto reversibile")],
                     "pred": "Malato", "precision": 1.00, "coverage": 0.25},
-    "A_EX_sano":   {"rule": ["Tipo dolore toracico = Dolore non anginoso",
-                             "Età <= 48",
-                             "Pendenza tratto ST = Ascendente"],
+    "A_EX_sano":   {"rule": [
+                        ("cp",    "Tipo di dolore toracico: dolore non anginoso"),
+                        ("age",   "Età minore o uguale a 48 anni"),
+                        ("slope", "Pendenza del tratto ST: ascendente")],
                     "pred": "Sano", "precision": 0.97, "coverage": 0.26},
 }
 
@@ -1252,13 +1257,15 @@ def render_example(method, example):
         target = "Sano" if example["pred"] == "Malato" else "Malato"
         # testo pieno e non st.caption: la conclusione e' la parte piu'
         # importante della spiegazione controfattuale e deve risaltare
-        st.markdown(f"##### Con queste modifiche la previsione diventerebbe: "
+        st.markdown(f"#### Con queste modifiche la previsione diventerebbe: "
                     f"{verdetto(target)}")
 
     elif method == "Anchors":
         a = ANCHORS_RULE[eid]
-        st.markdown("**Regola:** SE " + "  E  ".join(f"`{c}`" for c in a["rule"]) +
-                    f"  ALLORA previsione = {verdetto(a['pred'])}")
+        st.markdown("##### Regola usata dal modello per questo paziente")
+        st.markdown("**SE** valgono tutte queste condizioni:")
+        st.markdown("\n".join(f"- **{testo}**" for _, testo in a["rule"]))
+        st.markdown(f"#### ALLORA la previsione è: {verdetto(a['pred'])}")
         st.caption(f"La regola è corretta nel {a['precision']:.0%} dei pazienti "
                    f"simili e si applica al {a['coverage']:.0%} dei pazienti.")
 
@@ -1587,15 +1594,19 @@ def page_done():
     if st.session_state.get("storage_error") and ok:
         st.caption("Il salvataggio è andato a buon fine dopo un primo tentativo "
                    "non riuscito.")
-    with st.expander("Anteprima dati salvati (solo per il ricercatore)"):
-        dove = {"sheets": "Google Sheets", "local": "file locale responses.csv"}
-        st.caption("Destinazione: " +
-                   dove.get(st.session_state.get("storage"), "nessuna scrittura")
-                   + (f" — errore: {st.session_state.storage_error}"
-                      if st.session_state.get("storage_error") else ""))
-        # la colonna 'response' mescola testo e numeri: la converto in stringa
-        # per evitare avvisi di serializzazione nell'anteprima
-        st.dataframe(pd.DataFrame(st.session_state.rows).astype(str))
+    # L'anteprima dei dati serve solo a chi conduce lo studio: mostrarla ai
+    # partecipanti li espone alle risposte corrette e alla struttura interna.
+    # Compare quindi soltanto in modalita' sviluppo.
+    if dev_mode():
+        with st.expander("Anteprima dati salvati (solo per il ricercatore)"):
+            dove = {"sheets": "Google Sheets", "local": "file locale responses.csv"}
+            st.caption("Destinazione: " +
+                       dove.get(st.session_state.get("storage"), "nessuna scrittura")
+                       + (f" — errore: {st.session_state.storage_error}"
+                          if st.session_state.get("storage_error") else ""))
+            # la colonna 'response' mescola testo e numeri: la converto in
+            # stringa per evitare avvisi di serializzazione nell'anteprima
+            st.dataframe(pd.DataFrame(st.session_state.rows).astype(str))
 
 
 # =========================================================================
