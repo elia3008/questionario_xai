@@ -901,17 +901,24 @@ def _salva_risposte(mappa):
             salvate[chiave] = valore
 
 
-def _scroll_in_cima():
-    """Riporta la finestra in cima alla pagina.
+def _scroll_pagina(modo, traccia):
+    """Gestisce la posizione della pagina dopo un cambio di schermata.
 
-    Streamlit ridisegna la pagina ma il browser conserva la posizione dello
-    scroll: cambiando schermata ci si ritrova a meta' o in fondo. Non esiste
-    un'API nativa, quindi si inietta un frammento di JavaScript che agisce sul
-    documento genitore (il frammento vive dentro un iframe).
+    modo:
+      "cima"       riporta in alto (comportamento normale)
+      "ripristina" torna al punto in cui il partecipante aveva lasciato le
+                   domande, usato quando rientra dopo aver rivisto le
+                   spiegazioni
 
-    Il contatore nel commento serve a rendere l'HTML diverso a ogni chiamata:
-    altrimenti Streamlit riutilizza lo stesso iframe e lo script non viene
-    rieseguito.
+    traccia: se True installa il salvataggio continuo della posizione. Va
+    attivato solo nella fase domande, cosi' il valore memorizzato resta quello
+    del quiz e non viene sovrascritto scorrendo la pagina delle spiegazioni.
+
+    Streamlit non offre API per lo scroll, quindi si inietta JavaScript che
+    agisce sul documento genitore (il frammento vive dentro un iframe alto un
+    pixel). Il contatore nel commento rende l'HTML diverso a ogni chiamata:
+    altrimenti Streamlit riuserebbe lo stesso iframe senza rieseguire lo
+    script.
     """
     n = st.session_state.get("_scroll_n", 0) + 1
     st.session_state["_scroll_n"] = n
@@ -919,29 +926,57 @@ def _scroll_in_cima():
     <script>
       /* chiamata {n} */
       (function () {{
-        const doc = window.parent && window.parent.document;
+        const w = window.parent;
+        const doc = w && w.document;
         if (!doc) return;
-        const bersagli = [
+
+        // il contenitore che scorre davvero cambia con le versioni di
+        // Streamlit: si prova in ordine e si tiene il primo che ha contenuto
+        // piu' alto della propria finestra
+        const candidati = () => [
           doc.querySelector('section.main'),
           doc.querySelector('[data-testid="stMain"]'),
           doc.querySelector('[data-testid="stAppViewContainer"]'),
           doc.querySelector('.main'),
           doc.scrollingElement, doc.documentElement, doc.body
-        ];
-        const suvvia = () => {{
-          for (const el of bersagli) {{
-            if (!el) continue;
-            try {{ el.scrollTo({{top: 0, left: 0, behavior: 'instant'}}); }}
-            catch (e) {{ el.scrollTop = 0; }}
+        ].filter(Boolean);
+
+        const scrollabile = () => {{
+          for (const el of candidati()) {{
+            if (el.scrollHeight > el.clientHeight + 8) return el;
           }}
-          try {{ window.parent.scrollTo(0, 0); }} catch (e) {{}}
+          return doc.scrollingElement || doc.documentElement;
         }};
-        suvvia();
+
+        // --- salvataggio continuo della posizione (installato una volta sola)
+        if (!w.__scrollInit) {{
+          w.__scrollInit = true;
+          w.__scrollSalvato = 0;
+          const salva = () => {{
+            if (!w.__tracciaScroll) return;
+            const el = scrollabile();
+            w.__scrollSalvato = Math.max(el.scrollTop || 0, w.scrollY || 0);
+          }};
+          w.addEventListener('scroll', salva, true);   // true: intercetta
+          doc.addEventListener('scroll', salva, true); // anche i contenitori
+        }}
+        w.__tracciaScroll = {str(bool(traccia)).lower()};
+
+        const meta = {'w.__scrollSalvato || 0' if modo == "ripristina" else '0'};
+        const vai = () => {{
+          for (const el of candidati()) {{
+            try {{ el.scrollTo({{top: meta, left: 0, behavior: 'instant'}}); }}
+            catch (e) {{ el.scrollTop = meta; }}
+          }}
+          try {{ w.scrollTo(0, meta); }} catch (e) {{}}
+        }};
+        vai();
         // ripetuto: al primo giro il contenuto nuovo puo' non essere ancora
         // stato disegnato, e il browser rimetterebbe lo scroll dov'era
-        requestAnimationFrame(suvvia);
-        setTimeout(suvvia, 60);
-        setTimeout(suvvia, 250);
+        requestAnimationFrame(vai);
+        setTimeout(vai, 60);
+        setTimeout(vai, 250);
+        setTimeout(vai, 500);
       }})();
     </script>
     """
@@ -999,7 +1034,7 @@ def _pulsante_rivedi_flottante(attivo, testo):
             #rivedi-flottante:hover {{ background: #f1f3f5; }}
             @media (max-width: 640px) {{
               #rivedi-flottante {{
-                right: 12px; bottom: 60px;
+                right: 12px; bottom: 108px;
                 padding: 10px 15px; font-size: 14px;
               }}
             }}`;
@@ -1067,18 +1102,28 @@ def _avvisa_prima_di_uscire(attivo):
 
 
 def _scroll_se_cambio_pagina():
-    """Chiama _scroll_in_cima() solo quando si cambia davvero schermata.
+    """Sistema la posizione della pagina, ma solo a un vero cambio schermata.
 
-    Un rerun causato dal click su un radio non deve far saltare la pagina in
-    cima: si confronta quindi l'identita' della schermata corrente con quella
-    disegnata l'ultima volta.
+    Un rerun causato dal click su un radio non deve far saltare la pagina: si
+    confronta quindi l'identita' della schermata corrente con quella disegnata
+    l'ultima volta.
     """
     chiave = (st.session_state.get("step"),
               st.session_state.get("block_idx"),
               st.session_state.get("block_phase"))
-    if st.session_state.get("_pagina_corrente") != chiave:
-        st.session_state["_pagina_corrente"] = chiave
-        _scroll_in_cima()
+    if st.session_state.get("_pagina_corrente") == chiave:
+        return
+
+    st.session_state["_pagina_corrente"] = chiave
+    in_domande = (st.session_state.get("step") == "block"
+                  and st.session_state.get("block_phase") == "questions")
+
+    # Si torna al punto lasciato solo rientrando nelle domande dopo aver
+    # premuto "Rivedi": in quel caso revisits e' maggiore di zero. Arrivando
+    # alle domande per la prima volta, o entrando in un blocco nuovo (dove
+    # revisits riparte da zero), si comincia invece dall'inizio.
+    riprendi = in_domande and st.session_state.get("revisits", 0) > 0
+    _scroll_pagina("ripristina" if riprendi else "cima", traccia=in_domande)
 
 
 def _accumula_tempo(fase):
