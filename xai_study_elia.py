@@ -910,15 +910,21 @@ def _scroll_pagina(modo, traccia):
                    domande, usato quando rientra dopo aver rivisto le
                    spiegazioni
 
-    traccia: se True installa il salvataggio continuo della posizione. Va
-    attivato solo nella fase domande, cosi' il valore memorizzato resta quello
-    del quiz e non viene sovrascritto scorrendo la pagina delle spiegazioni.
+    traccia: se True tiene aggiornata la posizione memorizzata. Va attivato
+    solo nella fase domande, cosi' il valore non viene sovrascritto scorrendo
+    la pagina delle spiegazioni.
 
-    Streamlit non offre API per lo scroll, quindi si inietta JavaScript che
-    agisce sul documento genitore (il frammento vive dentro un iframe alto un
-    pixel). Il contatore nel commento rende l'HTML diverso a ogni chiamata:
-    altrimenti Streamlit riuserebbe lo stesso iframe senza rieseguire lo
-    script.
+    Due accorgimenti rendono affidabile il ripristino:
+
+    1. la posizione viene salvata sia in continuo (evento scroll) sia al
+       momento del click su "Rivedi" — quest'ultimo e' il valore che conta
+       davvero, ed e' immune a eventuali eventi di scroll mancati;
+
+    2. il ripristino non viene tentato poche volte a tempo fisso, ma ripetuto
+       finche' la posizione non e' raggiunta: al rientro Streamlit ridisegna
+       tutto da capo e per qualche istante la pagina e' piu' corta di quanto
+       sara', quindi un tentativo anticipato verrebbe troncato in fondo alla
+       pagina ancora incompleta.
     """
     n = st.session_state.get("_scroll_n", 0) + 1
     st.session_state["_scroll_n"] = n
@@ -931,8 +937,8 @@ def _scroll_pagina(modo, traccia):
         if (!doc) return;
 
         // il contenitore che scorre davvero cambia con le versioni di
-        // Streamlit: si prova in ordine e si tiene il primo che ha contenuto
-        // piu' alto della propria finestra
+        // Streamlit: si prova in ordine e si tiene il primo il cui contenuto
+        // supera l'altezza visibile
         const candidati = () => [
           doc.querySelector('section.main'),
           doc.querySelector('[data-testid="stMain"]'),
@@ -948,21 +954,38 @@ def _scroll_pagina(modo, traccia):
           return doc.scrollingElement || doc.documentElement;
         }};
 
-        // --- salvataggio continuo della posizione (installato una volta sola)
+        const posizione = () => {{
+          let p = w.scrollY || 0;
+          for (const el of candidati()) p = Math.max(p, el.scrollTop || 0);
+          return p;
+        }};
+
+        // ---- salvataggio, installato una volta sola ----
         if (!w.__scrollInit) {{
           w.__scrollInit = true;
           w.__scrollSalvato = 0;
-          const salva = () => {{
-            if (!w.__tracciaScroll) return;
-            const el = scrollabile();
-            w.__scrollSalvato = Math.max(el.scrollTop || 0, w.scrollY || 0);
-          }};
-          w.addEventListener('scroll', salva, true);   // true: intercetta
-          doc.addEventListener('scroll', salva, true); // anche i contenitori
+
+          // in continuo, mentre si scorre il quiz
+          const salva = () => {{ if (w.__tracciaScroll) w.__scrollSalvato = posizione(); }};
+          w.addEventListener('scroll', salva, true);
+          doc.addEventListener('scroll', salva, true);
+
+          // e soprattutto al click su "Rivedi": e' il momento esatto in cui
+          // serve fotografare la posizione, sia dal pulsante del modulo sia
+          // dal gemello flottante
+          doc.addEventListener('click', function (ev) {{
+            const b = ev.target && ev.target.closest && ev.target.closest('button');
+            if (!b) return;
+            if (((b.innerText || '').trim()).indexOf('Rivedi') === -1) return;
+            w.__scrollSalvato = posizione();
+          }}, true);
         }}
         w.__tracciaScroll = {str(bool(traccia)).lower()};
 
+        // ---- spostamento ----
         const meta = {'w.__scrollSalvato || 0' if modo == "ripristina" else '0'};
+        if (w.__scrollTimer) {{ clearInterval(w.__scrollTimer); w.__scrollTimer = null; }}
+
         const vai = () => {{
           for (const el of candidati()) {{
             try {{ el.scrollTo({{top: meta, left: 0, behavior: 'instant'}}); }}
@@ -970,13 +993,32 @@ def _scroll_pagina(modo, traccia):
           }}
           try {{ w.scrollTo(0, meta); }} catch (e) {{}}
         }};
+
         vai();
-        // ripetuto: al primo giro il contenuto nuovo puo' non essere ancora
-        // stato disegnato, e il browser rimetterebbe lo scroll dov'era
-        requestAnimationFrame(vai);
-        setTimeout(vai, 60);
-        setTimeout(vai, 250);
-        setTimeout(vai, 500);
+        if (meta <= 0) {{ requestAnimationFrame(vai); setTimeout(vai, 120); return; }}
+
+        // si insiste finche' la pagina non e' cresciuta abbastanza da
+        // permettere di raggiungere il punto, al massimo per ~4 secondi
+        let tentativi = 0;
+        w.__scrollTimer = setInterval(function () {{
+          tentativi++;
+          vai();
+          const arrivato = Math.abs(posizione() - meta) <= 4;
+          if (arrivato || tentativi > 80) {{
+            clearInterval(w.__scrollTimer);
+            w.__scrollTimer = null;
+          }}
+        }}, 50);
+
+        // se nel frattempo il partecipante scorre da solo, si smette subito
+        const stop = () => {{
+          if (w.__scrollTimer) {{
+            clearInterval(w.__scrollTimer);
+            w.__scrollTimer = null;
+          }}
+        }};
+        w.addEventListener('wheel', stop, {{once: true, passive: true}});
+        w.addEventListener('touchstart', stop, {{once: true, passive: true}});
       }})();
     </script>
     """
