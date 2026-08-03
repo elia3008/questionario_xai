@@ -775,39 +775,51 @@ def default_index():
     return 0 if autofill() else None
 
 
-def flush_rows():
-    """Salva le righe non ancora scritte: prima Google Sheets, poi CSV locale.
+def salva_tutto():
+    """Scrive TUTTE le risposte sul foglio, una volta sola, a fine questionario.
 
-    Il salvataggio e' incrementale (a fine di ogni blocco), cosi' chi abbandona
-    a meta' non fa perdere quello che ha gia' completato. Un errore non
-    interrompe mai il questionario: viene annotato e mostrato al ricercatore,
-    non al partecipante.
+    Il salvataggio avviene solo al termine: chi interrompe a meta' non lascia
+    righe parziali, e il foglio contiene esclusivamente questionari completi.
+
+    Tre protezioni contro le righe doppie:
+      - il flag 'saved' impedisce una seconda scrittura nella stessa sessione,
+        anche se Streamlit riesegue lo script (cosa che accade di continuo);
+      - la scrittura avviene in un'unica chiamata append_rows;
+      - se la scrittura fallisce il flag NON viene alzato, cosi' un tentativo
+        successivo puo' ancora riuscire.
+
+    Restituisce True se i dati sono stati scritti (o lo erano gia').
     """
     if dev_mode():
-        return
-    nuove = st.session_state.rows[st.session_state.flushed:]
-    if not nuove:
-        return
+        return False
+    if st.session_state.get("saved"):
+        return True                      # gia' salvato: non riscrivere
+    righe = st.session_state.rows
+    if not righe:
+        return False
 
     ws = _worksheet(SHEET_RISPOSTE, COLONNE)
     if ws is not None:
         try:
-            ws.append_rows([[_cella(r.get(c)) for c in COLONNE] for r in nuove],
+            ws.append_rows([[_cella(r.get(c)) for c in COLONNE] for r in righe],
                            value_input_option="RAW")
-            st.session_state.flushed = len(st.session_state.rows)
+            st.session_state.saved = True
             st.session_state.storage = "sheets"
-            return
+            st.session_state.storage_error = None
+            return True
         except Exception as e:
             st.session_state.storage_error = f"scrittura: {str(e)[:150]}"
 
     try:
-        pd.DataFrame(nuove).to_csv(
+        pd.DataFrame(righe).to_csv(
             RESULTS_FILE, mode="a",
             header=not os.path.exists(RESULTS_FILE), index=False)
-        st.session_state.flushed = len(st.session_state.rows)
+        st.session_state.saved = True
         st.session_state.storage = "local"
+        return True
     except Exception as e:
         st.session_state.storage_error = f"csv: {str(e)[:150]}"
+        return False
 
 
 def _radio_index(chiave, opzioni):
@@ -895,6 +907,41 @@ def _scroll_in_cima():
     """
     # st.components.v1.html e' deprecato dal 2026 in favore di st.iframe:
     # si usa il nuovo se c'e', altrimenti si ripiega sul vecchio.
+    try:
+        st.iframe(html, height=1)
+    except AttributeError:
+        import streamlit.components.v1 as components
+        components.html(html, height=0)
+
+
+def _avvisa_prima_di_uscire(attivo):
+    """Fa comparire l'avviso del browser se si prova a ricaricare o chiudere.
+
+    Streamlit perde tutto lo stato al ricaricamento della pagina: il
+    partecipante ripartirebbe da capo. Il messaggio nativo del browser
+    ("Vuoi davvero abbandonare il sito?") intercetta i casi accidentali, che
+    sono la maggioranza. Il testo non e' personalizzabile: lo decidono i
+    browser per evitare abusi.
+
+    Va disattivato sulla pagina finale, altrimenti l'avviso comparirebbe anche
+    a chi ha legittimamente finito.
+    """
+    stato = "on" if attivo else "off"
+    if st.session_state.get("_avviso_uscita") == stato:
+        return                      # gia' impostato, non ripetere l'iniezione
+    st.session_state["_avviso_uscita"] = stato
+    corpo = ("w.onbeforeunload = function (e) { e.preventDefault(); "
+             "e.returnValue = ''; return ''; };" if attivo
+             else "w.onbeforeunload = null;")
+    html = f"""
+    <script>
+      (function () {{
+        const w = window.parent;
+        if (!w) return;
+        {corpo}
+      }})();
+    </script>
+    """
     try:
         st.iframe(html, height=1)
     except AttributeError:
@@ -1190,6 +1237,7 @@ if "step" not in st.session_state:
     st.session_state.blocks = None       # [Baseline, m1, m2, m3]
     st.session_state.block_idx = 0
     st.session_state.block_phase = "exposure"
+    st.session_state.saved = False       # True dopo la scrittura finale
     st.session_state.storage = None      # "sheets" | "local"
     st.session_state.storage_error = None
     st.session_state.answers = {}        # risposte salvate (sopravvivono ai widget)
@@ -1222,8 +1270,12 @@ def page_consent():
         "e, dove è presente una spiegazione, quanto ti sia sembrata utile.\n\n"
         "**Non serve alcuna competenza medica.** Non ti chiediamo di fare una "
         "diagnosi, ma di capire il ragionamento di un sistema di apprendimento automatico.\n\n"
-        "La partecipazione è **anonima**, richiede circa **15-20 minuti** e "
-        "puoi interrompere in qualsiasi momento."
+        "La partecipazione è **anonima** e richiede circa **15-20 minuti**. "
+        "Sei libero di interrompere in qualsiasi momento: in quel caso le tue "
+        "risposte non verranno registrate.\n\n"
+        "⚠️ **Completa il questionario in un'unica sessione.** Le risposte "
+        "vengono salvate solo alla fine: se ricarichi o chiudi la pagina prima "
+        "di arrivare in fondo, dovrai ricominciare da capo."
     )
     ok = st.checkbox("Ho letto le informazioni e acconsento a partecipare.")
     if st.button("Inizia", disabled=not ok):
@@ -1256,7 +1308,7 @@ def page_demographics():
         log("demographics", "-", "background", bg)
         log("demographics", "-", "familiarity", fam)
         log("demographics", "-", "medical_background", med)
-        flush_rows()
+        # nessuna scrittura qui: i dati partono tutti insieme alla fine
         st.session_state.step = "instructions"
         st.rerun()
 
@@ -1457,8 +1509,6 @@ def page_block():
         for i in sorted(sat):
             log("satisfaction", method, f"ESS_{i + 1}", sat[i])
 
-        flush_rows()   # salvataggio incrementale a fine blocco
-
         if st.session_state.block_idx < N_BLOCKS - 1:
             st.session_state.block_idx += 1
             _inizia_blocco()
@@ -1466,18 +1516,30 @@ def page_block():
         else:
             log("timing", "-", "total", None,
                 rt=round(time.time() - st.session_state.t_start, 1))
-            flush_rows()
+            salva_tutto()          # unica scrittura, a questionario completato
             st.session_state.step = "done"
         st.rerun()
 
 
 def page_done():
+    # se la scrittura non era riuscita (rete lenta, quota Google), si ritenta
+    # qui: il flag 'saved' garantisce che un secondo tentativo riuscito non
+    # produca righe doppie
+    ok = salva_tutto() or st.session_state.get("saved") or dev_mode()
+
     st.title("Grazie per aver partecipato! 🫀")
-    st.write("Le tue risposte sono state registrate in forma anonima.")
-    st.balloons()
-    if st.session_state.get("storage_error"):
-        st.warning("Si è verificato un problema tecnico nel salvataggio delle "
-                   "risposte. Se puoi, segnalalo a chi ti ha inviato il link.")
+    if ok:
+        st.write("Le tue risposte sono state registrate in forma anonima.")
+        st.balloons()
+    else:
+        st.error("Non è stato possibile salvare le risposte per un problema "
+                 "tecnico. **Non chiudere questa pagina**: premi il pulsante "
+                 "qui sotto per riprovare.")
+        if st.button("Riprova a salvare"):
+            st.rerun()
+    if st.session_state.get("storage_error") and ok:
+        st.caption("Il salvataggio è andato a buon fine dopo un primo tentativo "
+                   "non riuscito.")
     with st.expander("Anteprima dati salvati (solo per il ricercatore)"):
         dove = {"sheets": "Google Sheets", "local": "file locale responses.csv"}
         st.caption("Destinazione: " +
@@ -1617,6 +1679,9 @@ PAGES = {
 }
 
 _scroll_se_cambio_pagina()
+# l'avviso di uscita resta attivo durante tutto il questionario e sparisce
+# quando il partecipante ha finito
+_avvisa_prima_di_uscire(st.session_state.step not in ("consent", "done"))
 glossary_sidebar()
 dev_sidebar()
 PAGES[st.session_state.step]()
