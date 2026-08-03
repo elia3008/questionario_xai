@@ -954,6 +954,68 @@ def _scroll_in_cima():
         components.html(html, height=0)
 
 
+def _pulsante_rivedi_flottante(attivo, testo):
+    """Pulsante fisso in basso a destra che riporta alle spiegazioni.
+
+    Il pulsante vero e' un form_submit_button in cima al modulo: scorrendo tra
+    i cinque pazienti sparisce dalla vista, e per rivedere la spiegazione
+    bisognerebbe risalire tutta la pagina. Qui se ne crea un gemello ancorato
+    allo schermo, che al click preme quello vero.
+
+    L'elemento viene inserito nel documento genitore (non nell'iframe dello
+    script, che e' alto un pixel e lo ritaglierebbe) e rimosso quando non
+    serve piu'. L'id univoco impedisce che se ne accumulino piu' copie.
+    """
+    stato = f"{attivo}|{testo}"
+    if st.session_state.get("_flottante") == stato:
+        return                       # gia' nello stato giusto: non reiniettare
+    st.session_state["_flottante"] = stato
+
+    etichetta = testo.replace("'", "\\'")
+    html = f"""
+    <script>
+      (function () {{
+        const d = window.parent && window.parent.document;
+        if (!d) return;
+        const vecchio = d.getElementById('rivedi-flottante');
+        if (vecchio) vecchio.remove();
+        if (!{str(bool(attivo)).lower()}) return;
+
+        const b = d.createElement('button');
+        b.id = 'rivedi-flottante';
+        b.type = 'button';
+        b.textContent = '{etichetta}';
+        b.style.cssText = [
+          'position:fixed', 'right:18px', 'bottom:18px', 'z-index:2147483000',
+          'padding:11px 18px', 'border-radius:24px', 'border:1px solid #c8cdd4',
+          'background:#ffffff', 'color:#1f2933', 'font-size:15px',
+          'font-weight:600', 'cursor:pointer',
+          'box-shadow:0 3px 14px rgba(0,0,0,.22)',
+          'font-family:inherit', 'max-width:min(92vw, 340px)'
+        ].join(';');
+        b.onmouseenter = () => {{ b.style.background = '#f1f3f5'; }};
+        b.onmouseleave = () => {{ b.style.background = '#ffffff'; }};
+
+        b.onclick = function () {{
+          // cerca il vero pulsante del modulo e lo preme
+          const tutti = d.querySelectorAll('button');
+          for (const x of tutti) {{
+            if (x.id === 'rivedi-flottante') continue;
+            const t = (x.innerText || '').trim();
+            if (t.indexOf('Rivedi') !== -1) {{ x.click(); return; }}
+          }}
+        }};
+        d.body.appendChild(b);
+      }})();
+    </script>
+    """
+    try:
+        st.iframe(html, height=1)
+    except AttributeError:
+        import streamlit.components.v1 as components
+        components.html(html, height=0)
+
+
 def _avvisa_prima_di_uscire(attivo):
     """Fa comparire l'avviso del browser se si prova a ricaricare o chiudere.
 
@@ -1451,8 +1513,10 @@ def page_block():
         # solo cosi' Streamlit invia i valori dei widget del form e le risposte
         # gia' date vengono conservate. Sta in alto perche' serve proprio quando
         # si sta guardando il primo paziente, senza dover scorrere fino in fondo.
+        etichetta_rivedi = ("◀ Rivedi i dati di esempio" if is_baseline
+                            else "◀ Rivedi la spiegazione")
         indietro = st.form_submit_button(
-            f"◀ Rivedi {'i dati di esempio' if is_baseline else 'la spiegazione'}",
+            etichetta_rivedi,
             help="Torni alla pagina precedente di QUESTA parte. "
                  "Le risposte già date vengono conservate.")
         st.caption("")
@@ -1505,6 +1569,10 @@ def page_block():
                     value=_slider_value(k_sat, OPZ_SAT, iniziale))
 
         submitted = st.form_submit_button("Conferma e prosegui")
+
+    # gemello ancorato allo schermo, cosi' resta a portata di mano anche in
+    # fondo alla pagina
+    _pulsante_rivedi_flottante(True, etichetta_rivedi)
 
     def _memorizza():
         """Copia le risposte correnti nel dizionario persistente."""
@@ -1740,6 +1808,11 @@ _scroll_se_cambio_pagina()
 # l'avviso di uscita resta attivo durante tutto il questionario e sparisce
 # quando il partecipante ha finito
 _avvisa_prima_di_uscire(st.session_state.step not in ("consent", "done"))
+# il pulsante flottante esiste solo nella fase domande: qui lo si rimuove da
+# tutte le altre schermate, poi page_block lo ricrea dove serve
+if not (st.session_state.step == "block"
+        and st.session_state.get("block_phase") == "questions"):
+    _pulsante_rivedi_flottante(False, "")
 glossary_sidebar()
 dev_sidebar()
 PAGES[st.session_state.step]()
