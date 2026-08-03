@@ -1274,6 +1274,16 @@ def _shap_sorted(example):
     return sorted(contributi.items(), key=lambda kv: -abs(kv[1]))
 
 
+def _shap_fx(example):
+    """Valore finale f(x) mostrato dal grafico.
+
+    E' E[f(X)] piu' i contributi delle variabili VISIBILI: la stessa somma che
+    il waterfall accumula barra dopo barra. Passando di qui, il numero scritto
+    sotto al grafico non puo' discostarsi da quello disegnato sopra.
+    """
+    return SHAP_BASE_VALUE + sum(v for _, v in _shap_sorted(example))
+
+
 def _left_labels(ax, rows, values):
     """Etichette 'Nome variabile = valore' a sinistra dell'asse.
 
@@ -1463,6 +1473,18 @@ def render_example(method, example):
         st.markdown("**Quanto ha pesato ogni variabile su questa decisione:**")
         _verifica_shap_nascoste(example)
         plot_shap_local(example)
+        # il numero in cima al grafico da solo non dice nulla: qui viene
+        # tradotto in percentuale e collegato alla classificazione finale
+        fx = _shap_fx(example)
+        perc = f"{fx * 100:.1f}".replace(".", ",")
+        soglia = "superiore" if fx >= 0.5 else "inferiore"
+        st.markdown(
+            f"##### Come si legge il risultato\n\n"
+            f"Il valore finale **f(x) = {fx:.3f}** è la probabilità che il "
+            f"modello assegna a questo paziente di soffrire di problemi "
+            f"cardiaci: **{perc}%**.\n\n"
+            f"Essendo {soglia} al 50%, il paziente viene classificato come "
+            f"{verdetto(example['pred'])}.")
 
     elif method == "DiCE":
         st.markdown("##### Cosa cambierebbe la previsione (scenario \"what-if\")")
