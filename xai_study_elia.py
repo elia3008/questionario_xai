@@ -981,20 +981,35 @@ def _pulsante_rivedi_flottante(attivo, testo):
         if (vecchio) vecchio.remove();
         if (!{str(bool(attivo)).lower()}) return;
 
+        // stile in un foglio a parte: serve la media query per alzare il
+        // pulsante sui telefoni, dove il badge di Streamlit e' piu' ingombrante
+        let css = d.getElementById('rivedi-flottante-css');
+        if (!css) {{
+          css = d.createElement('style');
+          css.id = 'rivedi-flottante-css';
+          css.textContent = `
+            #rivedi-flottante {{
+              position: fixed; right: 18px; bottom: 88px; z-index: 2147483000;
+              padding: 11px 18px; border-radius: 24px;
+              border: 1px solid #c8cdd4; background: #ffffff; color: #1f2933;
+              font-size: 15px; font-weight: 600; cursor: pointer;
+              font-family: inherit; max-width: min(92vw, 340px);
+              box-shadow: 0 3px 14px rgba(0,0,0,.22);
+            }}
+            #rivedi-flottante:hover {{ background: #f1f3f5; }}
+            @media (max-width: 640px) {{
+              #rivedi-flottante {{
+                right: 12px; bottom: 108px;
+                padding: 10px 15px; font-size: 14px;
+              }}
+            }}`;
+          d.head.appendChild(css);
+        }}
+
         const b = d.createElement('button');
         b.id = 'rivedi-flottante';
         b.type = 'button';
         b.textContent = '{etichetta}';
-        b.style.cssText = [
-          'position:fixed', 'right:18px', 'bottom:18px', 'z-index:2147483000',
-          'padding:11px 18px', 'border-radius:24px', 'border:1px solid #c8cdd4',
-          'background:#ffffff', 'color:#1f2933', 'font-size:15px',
-          'font-weight:600', 'cursor:pointer',
-          'box-shadow:0 3px 14px rgba(0,0,0,.22)',
-          'font-family:inherit', 'max-width:min(92vw, 340px)'
-        ].join(';');
-        b.onmouseenter = () => {{ b.style.background = '#f1f3f5'; }};
-        b.onmouseleave = () => {{ b.style.background = '#ffffff'; }};
 
         b.onclick = function () {{
           // cerca il vero pulsante del modulo e lo preme
