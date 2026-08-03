@@ -924,6 +924,14 @@ def _scroll_pagina(modo, traccia):
 
     traccia: se True tiene aggiornata l'ancora memorizzata. Va attivato solo
     nella fase domande, cosi' il valore non cambia scorrendo le spiegazioni.
+
+    DETTAGLIO IMPORTANTE. Lo snippet viaggia dentro un iframe, ma il codice
+    NON puo' restare li': Streamlit rimuove l'iframe al primo rerun utile, e
+    quando un iframe sparisce il suo contesto JavaScript viene distrutto —
+    listener e timer registrati da quel contesto smettono di funzionare. Per
+    questo l'iframe si limita a installare una funzione nella pagina genitore
+    (una volta sola) e poi a chiamarla: cosi' listener e timer appartengono al
+    documento principale e sopravvivono.
     """
     n = st.session_state.get("_scroll_n", 0) + 1
     st.session_state["_scroll_n"] = n
@@ -935,100 +943,101 @@ def _scroll_pagina(modo, traccia):
         const doc = w && w.document;
         if (!doc) return;
 
-        // il contenitore che scorre cambia con le versioni di Streamlit
-        const candidati = () => [
-          doc.querySelector('section.main'),
-          doc.querySelector('[data-testid="stMain"]'),
-          doc.querySelector('[data-testid="stAppViewContainer"]'),
-          doc.querySelector('.main'),
-          doc.scrollingElement, doc.documentElement, doc.body
-        ].filter(Boolean);
+        // --- installazione, una volta sola, DENTRO la pagina genitore
+        if (!w.__scrollHelper) {{
+          const s = doc.createElement('script');
+          s.textContent = `
+            (function () {{
+              const doc = document;
 
-        // l'ancora attualmente in cima allo schermo: si prende l'ultima che
-        // ha superato il bordo superiore, con un margine di tolleranza
-        const ancoraVisibile = () => {{
-          const tutte = doc.querySelectorAll('[id^="paz-"]');
-          let scelta = null;
-          for (const a of tutte) {{
-            if (a.getBoundingClientRect().top <= 120) scelta = a.id;
-          }}
-          return scelta;
-        }};
+              const candidati = () => [
+                doc.querySelector('section.main'),
+                doc.querySelector('[data-testid="stMain"]'),
+                doc.querySelector('[data-testid="stAppViewContainer"]'),
+                doc.querySelector('.main'),
+                doc.scrollingElement, doc.documentElement, doc.body
+              ].filter(Boolean);
 
-        // ---- memorizzazione, installata una volta sola ----
-        if (!w.__ancoraInit) {{
-          w.__ancoraInit = true;
-          w.__ancora = null;
+              // l'ancora piu' in basso fra quelle che hanno superato il bordo
+              // superiore: e' il paziente attualmente in cima allo schermo
+              const ancoraVisibile = () => {{
+                let scelta = null;
+                for (const a of doc.querySelectorAll('[id^="paz-"]')) {{
+                  if (a.getBoundingClientRect().top <= 140) scelta = a.id;
+                }}
+                return scelta;
+              }};
 
-          const aggiorna = () => {{
-            if (!w.__tracciaAncora) return;
-            const a = ancoraVisibile();
-            if (a) w.__ancora = a;
-          }};
-          w.addEventListener('scroll', aggiorna, true);
-          doc.addEventListener('scroll', aggiorna, true);
+              const aggiorna = () => {{
+                if (!window.__tracciaAncora) return;
+                const a = ancoraVisibile();
+                if (a) window.__ancora = a;
+              }};
+              window.addEventListener('scroll', aggiorna, true);
+              doc.addEventListener('scroll', aggiorna, true);
 
-          // al click su "Rivedi" si fotografa il punto: e' l'istante che conta
-          doc.addEventListener('click', function (ev) {{
-            const b = ev.target && ev.target.closest && ev.target.closest('button');
-            if (!b) return;
-            if (((b.innerText || '').trim()).indexOf('Rivedi') === -1) return;
-            const a = ancoraVisibile();
-            if (a) w.__ancora = a;
-          }}, true);
+              // al click su "Rivedi" si fotografa il punto: e' l'istante che
+              // conta, ed e' immune a eventuali eventi di scroll mancati
+              doc.addEventListener('click', function (ev) {{
+                const b = ev.target && ev.target.closest && ev.target.closest('button');
+                if (!b) return;
+                if (((b.innerText || '').trim()).indexOf('Rivedi') === -1) return;
+                const a = ancoraVisibile();
+                if (a) window.__ancora = a;
+              }}, true);
+
+              const inCima = () => {{
+                for (const el of candidati()) {{
+                  try {{ el.scrollTo({{top: 0, left: 0, behavior: 'instant'}}); }}
+                  catch (e) {{ el.scrollTop = 0; }}
+                }}
+                try {{ window.scrollTo(0, 0); }} catch (e) {{}}
+              }};
+
+              window.__scrollHelper = function (modo, traccia) {{
+                window.__tracciaAncora = !!traccia;
+                if (window.__scrollTimer) {{
+                  clearInterval(window.__scrollTimer);
+                  window.__scrollTimer = null;
+                }}
+
+                if (modo !== 'ripristina') {{
+                  inCima();
+                  requestAnimationFrame(inCima);
+                  setTimeout(inCima, 120);
+                  return;
+                }}
+
+                const bersaglio = window.__ancora;
+                if (!bersaglio) {{ inCima(); return; }}
+
+                // si insiste finche' l'elemento non compare: al rientro
+                // Streamlit ridisegna tutto e per qualche istante i pazienti
+                // non ci sono ancora
+                let tentativi = 0, riuscito = false;
+                window.__scrollTimer = setInterval(function () {{
+                  tentativi++;
+                  const el = doc.getElementById(bersaglio);
+                  if (el) {{
+                    try {{
+                      el.scrollIntoView({{block: 'start', behavior: 'instant'}});
+                      riuscito = true;
+                    }} catch (e) {{}}
+                  }}
+                  if ((riuscito && tentativi > 30) || tentativi > 120) {{
+                    clearInterval(window.__scrollTimer);
+                    window.__scrollTimer = null;
+                  }}
+                }}, 50);
+              }};
+            }})();
+          `;
+          doc.head.appendChild(s);
         }}
-        w.__tracciaAncora = {str(bool(traccia)).lower()};
 
-        // ---- spostamento ----
-        if (w.__scrollTimer) {{ clearInterval(w.__scrollTimer); w.__scrollTimer = null; }}
-
-        const inCima = () => {{
-          for (const el of candidati()) {{
-            try {{ el.scrollTo({{top: 0, left: 0, behavior: 'instant'}}); }}
-            catch (e) {{ el.scrollTop = 0; }}
-          }}
-          try {{ w.scrollTo(0, 0); }} catch (e) {{}}
-        }};
-
-        const modo = "{modo}";
-        if (modo !== "ripristina") {{
-          inCima();
-          requestAnimationFrame(inCima);
-          setTimeout(inCima, 120);
-          return;
+        if (w.__scrollHelper) {{
+          w.__scrollHelper("{modo}", {str(bool(traccia)).lower()});
         }}
-
-        // ripristino: si aspetta che l'ancora esista davvero nella pagina
-        // appena ridisegnata, poi ci si porta sopra
-        const bersaglio = w.__ancora;
-        if (!bersaglio) {{ inCima(); return; }}
-
-        let tentativi = 0;
-        let riuscito = false;
-        w.__scrollTimer = setInterval(function () {{
-          tentativi++;
-          const el = doc.getElementById(bersaglio);
-          if (el) {{
-            try {{
-              el.scrollIntoView({{block: 'start', behavior: 'instant'}});
-              riuscito = true;
-            }} catch (e) {{}}
-          }}
-          // si continua un poco anche dopo il primo successo: la pagina puo'
-          // crescere ancora e spostare l'elemento
-          if ((riuscito && tentativi > 24) || tentativi > 100) {{
-            clearInterval(w.__scrollTimer);
-            w.__scrollTimer = null;
-          }}
-        }}, 50);
-
-        const stop = () => {{
-          if (w.__scrollTimer) {{
-            clearInterval(w.__scrollTimer);
-            w.__scrollTimer = null;
-          }}
-        }};
-        w.addEventListener('wheel', stop, {{once: true, passive: true}});
       }})();
     </script>
     """
@@ -1090,7 +1099,7 @@ def _pulsante_rivedi_flottante(attivo, testo, cerca="Rivedi"):
             #rivedi-flottante:hover {{ background: #f1f3f5; }}
             @media (max-width: 640px) {{
               #rivedi-flottante {{
-                right: 12px; bottom: 60px;
+                right: 12px; bottom: 108px;
                 padding: 10px 15px; font-size: 14px;
               }}
             }}`;
@@ -1102,15 +1111,30 @@ def _pulsante_rivedi_flottante(attivo, testo, cerca="Rivedi"):
         b.type = 'button';
         b.textContent = '{etichetta}';
 
-        b.onclick = function () {{
-          // cerca il vero pulsante del modulo e lo preme
-          const tutti = d.querySelectorAll('button');
-          for (const x of tutti) {{
-            if (x.id === 'rivedi-flottante') continue;
-            const t = (x.innerText || '').trim();
-            if (t.indexOf('{bersaglio}') !== -1) {{ x.click(); return; }}
-          }}
-        }};
+        // il gestore del click viene definito NELLA pagina genitore, non qui:
+        // Streamlit rimuove l'iframe al primo rerun e con esso morirebbe ogni
+        // funzione definita in questo contesto, lasciando un pulsante inerte
+        b.setAttribute('data-cerca', '{bersaglio}');
+        if (!d.getElementById('rivedi-flottante-js')) {{
+          const js = d.createElement('script');
+          js.id = 'rivedi-flottante-js';
+          js.textContent = `
+            document.addEventListener('click', function (ev) {{
+              const f = ev.target && ev.target.closest
+                        && ev.target.closest('#rivedi-flottante');
+              if (!f) return;
+              const cerca = f.getAttribute('data-cerca') || 'Rivedi';
+              for (const x of document.querySelectorAll('button')) {{
+                if (x.id === 'rivedi-flottante') continue;
+                if (((x.innerText || '').trim()).indexOf(cerca) !== -1) {{
+                  x.click();
+                  return;
+                }}
+              }}
+            }}, true);
+          `;
+          d.head.appendChild(js);
+        }}
         d.body.appendChild(b);
       }})();
     </script>
