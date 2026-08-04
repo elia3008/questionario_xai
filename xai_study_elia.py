@@ -1801,7 +1801,7 @@ def page_block():
                 if st.button("Torna alle domande dall'inizio"):
                     _vai_alle_domande(False)
         else:
-            if st.button("Ho capito, passo alle domande"):
+            if st.button("Passo alle domande"):
                 _vai_alle_domande(False)
         return
 
