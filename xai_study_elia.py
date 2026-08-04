@@ -1765,7 +1765,10 @@ def page_block():
         ancora(ANCORA_ESEMPI)
 
         if st.session_state.revisits > 0:
-            st.success("Sei tornato alle spiegazioni. Le risposte che avevi già "
+            # nella baseline non c'e' nessuna spiegazione: si torna ai soli
+            # dati di esempio, e il messaggio lo dice
+            dove = "agli esempi" if is_baseline else "alle spiegazioni"
+            st.success(f"Sei tornato {dove}. Le risposte che avevi già "
                        "dato sono state conservate.")
 
         esempi = EXAMPLES[method]
