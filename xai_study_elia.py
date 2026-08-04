@@ -916,6 +916,11 @@ def _salva_risposte(mappa):
             salvate[chiave] = valore
 
 
+# Id del punto in cui iniziano gli esempi: chi torna dalle domande atterra
+# qui invece che in cima alla pagina.
+ANCORA_ESEMPI = "esempi-inizio"
+
+
 def ancora(nome):
     """Punto di riferimento invisibile a cui la pagina puo' tornare.
 
@@ -929,13 +934,17 @@ def ancora(nome):
                 unsafe_allow_html=True)
 
 
-def _scroll_pagina(modo, traccia):
+def _scroll_pagina(modo, traccia, ancora_fissa=None):
     """Sistema la posizione della pagina dopo un cambio di schermata.
 
     modo:
       "cima"       riporta in alto (comportamento normale)
       "ripristina" torna all'ancora memorizzata, cioe' al paziente che il
                    partecipante stava guardando quando ha premuto "Rivedi"
+
+    ancora_fissa: id di un punto preciso a cui saltare, qualunque sia il modo.
+    Serve per chi rientra nelle spiegazioni: l'introduzione al metodo l'ha gia'
+    letta, quindi conviene portarlo direttamente al primo esempio.
 
     traccia: se True tiene aggiornata l'ancora memorizzata. Va attivato solo
     nella fase domande, cosi' il valore non cambia scorrendo le spiegazioni.
@@ -1009,22 +1018,23 @@ def _scroll_pagina(modo, traccia):
                 try {{ window.scrollTo(0, 0); }} catch (e) {{}}
               }};
 
-              window.__scrollHelper = function (modo, traccia) {{
+              window.__scrollHelper = function (modo, traccia, ancoraFissa) {{
                 window.__tracciaAncora = !!traccia;
                 if (window.__scrollTimer) {{
                   clearInterval(window.__scrollTimer);
                   window.__scrollTimer = null;
                 }}
 
-                if (modo !== 'ripristina') {{
+                // un'ancora esplicita ha la precedenza; altrimenti si usa
+                // quella memorizzata, ma solo se il modo lo prevede
+                const bersaglio = ancoraFissa ||
+                                  (modo === 'ripristina' ? window.__ancora : null);
+                if (!bersaglio) {{
                   inCima();
                   requestAnimationFrame(inCima);
                   setTimeout(inCima, 120);
                   return;
                 }}
-
-                const bersaglio = window.__ancora;
-                if (!bersaglio) {{ inCima(); return; }}
 
                 // si insiste finche' l'elemento non compare: al rientro
                 // Streamlit ridisegna tutto e per qualche istante i pazienti
@@ -1051,7 +1061,8 @@ def _scroll_pagina(modo, traccia):
         }}
 
         if (w.__scrollHelper) {{
-          w.__scrollHelper("{modo}", {str(bool(traccia)).lower()});
+          w.__scrollHelper("{modo}", {str(bool(traccia)).lower()},
+                           {repr(ancora_fissa) if ancora_fissa else "null"});
         }}
       }})();
     </script>
@@ -1210,14 +1221,24 @@ def _scroll_se_cambio_pagina():
         return
 
     st.session_state["_pagina_corrente"] = chiave
-    in_domande = (st.session_state.get("step") == "block"
-                  and st.session_state.get("block_phase") == "questions")
+    in_blocco = st.session_state.get("step") == "block"
+    fase = st.session_state.get("block_phase")
+    in_domande = in_blocco and fase == "questions"
+    in_esempi = in_blocco and fase == "exposure"
 
     # Si torna al punto lasciato solo se il partecipante ha scelto
     # esplicitamente "Riprendi da dove ero": tutti gli altri percorsi verso le
     # domande cominciano dall'intestazione.
     riprendi = in_domande and st.session_state.get("riprendi_punto", False)
-    _scroll_pagina("ripristina" if riprendi else "cima", traccia=in_domande)
+
+    # Chi rientra nelle spiegazioni dopo aver premuto "Rivedi" atterra
+    # direttamente sul primo esempio: l'introduzione al metodo l'ha gia' letta
+    # e rileggerla ogni volta fa perdere tempo.
+    fissa = (ANCORA_ESEMPI if in_esempi and st.session_state.get("revisits", 0) > 0
+             else None)
+
+    _scroll_pagina("ripristina" if riprendi else "cima",
+                   traccia=in_domande, ancora_fissa=fissa)
 
 
 def _accumula_tempo(fase):
@@ -1655,6 +1676,10 @@ def page_block():
             if method == "SHAP" and SHOW_SHAP_GLOBAL:
                 st.subheader("Importanza generale delle variabili")
                 plot_shap_global()
+
+        # punto a cui atterra chi rientra dalle domande: l'introduzione al
+        # metodo l'ha gia' letta, quindi si parte da qui
+        ancora(ANCORA_ESEMPI)
 
         if st.session_state.revisits > 0:
             st.success("Sei tornato alle spiegazioni. Le risposte che avevi già "
