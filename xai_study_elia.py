@@ -984,6 +984,17 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None, respiro=0):
             (function () {{
               const doc = document;
 
+              // Il browser, mentre la pagina viene ridisegnata, cerca di
+              // mantenere in vista il contenuto che c'era prima: e' lo "scroll
+              // anchoring". Con Streamlit, che ricostruisce tutto da capo,
+              // questo produce una raffica di salti nei primi decimi di
+              // secondo — cio' che si percepisce come tremolio. Si disattiva.
+              const stile = doc.createElement('style');
+              stile.textContent =
+                'html, body, section.main, [data-testid="stMain"], ' +
+                '[data-testid="stAppViewContainer"] {{ overflow-anchor: none; }}';
+              doc.head.appendChild(stile);
+
               const candidati = () => [
                 doc.querySelector('section.main'),
                 doc.querySelector('[data-testid="stMain"]'),
@@ -1060,24 +1071,65 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None, respiro=0):
                   return alt + RESPIRO;
                 }};
 
-                let tentativi = 0, riuscito = false;
+                // Niente scrollIntoView ripetuto: quello riporta l'elemento
+                // al bordo, e sottraendo poi il margine si otterrebbe un salto
+                // avanti e indietro a ogni ciclo — il tremolio. Si calcola
+                // invece la posizione esatta e la si imposta solo se diversa
+                // da quella attuale, cosi' quando siamo a destinazione non
+                // viene toccato piu' nulla.
+                const contenitore = () =>
+                  candidati().find(x => x.scrollHeight > x.clientHeight + 8);
+
+                const bersaglioY = (el, c) => {{
+                  const dy = el.getBoundingClientRect().top
+                             - (c ? c.getBoundingClientRect().top : 0);
+                  const attuale = c ? c.scrollTop : (window.scrollY || 0);
+                  return Math.max(0, attuale + dy - margine());
+                }};
+
+                // Si aspetta che la pagina abbia finito di crescere prima di
+                // muoversi: mentre Streamlit disegna tabelle e grafici
+                // l'altezza cambia di continuo, e ricalcolare la posizione a
+                // ogni giro produrrebbe una serie di salti (l'effetto
+                // "tremolio"). Con l'altezza stabile basta un solo movimento.
+                // si parte da una posizione neutra: un solo movimento
+                // immediato, invece dell'inseguimento del browser
+                inCima();
+
+                let tentativi = 0, fermi = 0;
+                let altPrec = -1, stabile = 0;
+
                 window.__scrollTimer = setInterval(function () {{
                   tentativi++;
                   const el = doc.getElementById(bersaglio);
-                  if (el) {{
-                    try {{
-                      el.scrollIntoView({{block: 'start', behavior: 'instant'}});
-                      const c = candidati().find(
-                        x => x.scrollHeight > x.clientHeight + 8);
-                      if (c) {{
-                        c.scrollTop = Math.max(0, c.scrollTop - margine());
-                      }} else {{
-                        window.scrollTo(0, Math.max(0, window.scrollY - margine()));
-                      }}
-                      riuscito = true;
-                    }} catch (e) {{}}
-                  }}
-                  if ((riuscito && tentativi > 30) || tentativi > 120) {{
+                  if (!el) return;                 // non ancora disegnato
+
+                  const c = contenitore();
+                  const alt = c ? c.scrollHeight
+                                : (doc.documentElement.scrollHeight || 0);
+                  if (alt === altPrec) {{ stabile++; }}
+                  else {{ stabile = 0; altPrec = alt; }}
+
+                  // finche' la pagina cresce si resta fermi. Servono tre giri
+                  // di altezza costante (150 ms) perche' Streamlit disegna a
+                  // scatti e una pausa brevissima non significa che abbia
+                  // finito. Oltre gli 800 ms si procede comunque.
+                  if (stabile < 3 && tentativi < 16) return;
+
+                  try {{
+                    const meta = bersaglioY(el, c);
+                    const ora = c ? c.scrollTop : (window.scrollY || 0);
+                    if (Math.abs(ora - meta) > 2) {{
+                      if (c) c.scrollTop = meta;
+                      else window.scrollTo(0, meta);
+                      fermi = 0;
+                      stabile = 0;      // se ci si e' mossi, si ricontrolla
+                    }} else {{
+                      fermi++;
+                    }}
+                  }} catch (e) {{}}
+
+                  if (fermi >= 3 || tentativi > 120) {{
                     clearInterval(window.__scrollTimer);
                     window.__scrollTimer = null;
                   }}
