@@ -1308,7 +1308,7 @@ def _scroll_se_cambio_pagina():
     in_esempi = in_blocco and fase == "exposure"
 
     # Si torna al punto lasciato solo se il partecipante ha scelto
-    # esplicitamente "Riprendi da dove ero": tutti gli altri percorsi verso le
+    # esplicitamente "Riprendi da dove eri": tutti gli altri percorsi verso le
     # domande cominciano dall'intestazione.
     riprendi = in_domande and st.session_state.get("riprendi_punto", False)
 
@@ -1768,7 +1768,7 @@ def page_block():
             # nella baseline non c'e' nessuna spiegazione: si torna ai soli
             # dati di esempio, e il messaggio lo dice
             dove = "agli esempi" if is_baseline else "alle spiegazioni"
-            st.success(f"Sei tornato {dove}. Le risposte che avevi già "
+            st.success(f"Sei tornato/a {dove}. Le risposte che avevi già "
                        "dato sono state conservate.")
 
         esempi = EXAMPLES[method]
@@ -1792,13 +1792,13 @@ def page_block():
             st.rerun()
 
         # gemello ancorato allo schermo, cosi' non serve scorrere fino in fondo
-        _pulsante_rivedi_flottante(di_ritorno, "↩︎ Riprendi da dove ero",
+        _pulsante_rivedi_flottante(di_ritorno, "↩︎ Riprendi da dove eri",
                                    cerca="Riprendi")
 
         if di_ritorno:
             c1, c2 = st.columns(2)
             with c1:
-                if st.button("↩︎ Riprendi da dove ero"):
+                if st.button("↩︎ Riprendi da dove eri"):
                     _vai_alle_domande(True)
             with c2:
                 if st.button("Torna alle domande dall'inizio"):
