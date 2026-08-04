@@ -1654,7 +1654,7 @@ def page_consent():
         "separati che analizzano la decisione presa dal modello e provano a "
         "renderla comprensibile a una persona e a rendere chiaro il modo di ragionare del modello. Ne esistono di diversi tipi, e "
         "raccontano la stessa decisione in modi molto diversi tra loro.\n\n"
-        "Vedrai prima due decisioni del modello da sole, senza una spiegazione, poi decisioni nuove ma accompagnate "
+        "Vedrai prima due decisioni del modello da sole, senza una spiegazione, poi decisioni su nuovi pazienti ma accompagnate "
         "da una spiegazione. Ce ne sono di tre tipi, ne vedrai una alla volta. Ogni volta ti chiederemo "
         "di prevedere come il modello classificherebbe alcuni nuovi pazienti "
         "e, dove è presente una spiegazione, quanto ti sia sembrata utile.\n\n"
