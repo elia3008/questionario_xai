@@ -920,6 +920,12 @@ def _salva_risposte(mappa):
 # qui invece che in cima alla pagina.
 ANCORA_ESEMPI = "esempi-inizio"
 
+# Pixel di margine sopra il punto di atterraggio, oltre all'altezza
+# dell'intestazione fissa di Streamlit. Servono a mostrare anche cio' che sta
+# appena sopra l'ancora.
+RESPIRO_ESEMPI = 24     # per far entrare il messaggio "Sei tornato..."
+RESPIRO_PAZIENTE = 46   # per far entrare l'intestazione "Paziente N di 5"
+
 
 def ancora(nome):
     """Punto di riferimento invisibile a cui la pagina puo' tornare.
@@ -934,7 +940,7 @@ def ancora(nome):
                 unsafe_allow_html=True)
 
 
-def _scroll_pagina(modo, traccia, ancora_fissa=None):
+def _scroll_pagina(modo, traccia, ancora_fissa=None, respiro=0):
     """Sistema la posizione della pagina dopo un cambio di schermata.
 
     modo:
@@ -945,6 +951,10 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None):
     ancora_fissa: id di un punto preciso a cui saltare, qualunque sia il modo.
     Serve per chi rientra nelle spiegazioni: l'introduzione al metodo l'ha gia'
     letta, quindi conviene portarlo direttamente al primo esempio.
+
+    respiro: pixel di margine sopra il punto di atterraggio, oltre all'altezza
+    dell'intestazione fissa di Streamlit. Serve a lasciar vedere anche cio' che
+    precede l'ancora (il messaggio di ritorno, l'intestazione del paziente).
 
     traccia: se True tiene aggiornata l'ancora memorizzata. Va attivato solo
     nella fase domande, cosi' il valore non cambia scorrendo le spiegazioni.
@@ -1018,7 +1028,8 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None):
                 try {{ window.scrollTo(0, 0); }} catch (e) {{}}
               }};
 
-              window.__scrollHelper = function (modo, traccia, ancoraFissa) {{
+              window.__scrollHelper = function (modo, traccia, ancoraFissa, RESPIRO) {{
+                RESPIRO = RESPIRO || 0;
                 window.__tracciaAncora = !!traccia;
                 if (window.__scrollTimer) {{
                   clearInterval(window.__scrollTimer);
@@ -1039,6 +1050,16 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None):
                 // si insiste finche' l'elemento non compare: al rientro
                 // Streamlit ridisegna tutto e per qualche istante i pazienti
                 // non ci sono ancora
+                // scrollIntoView porta l'elemento al bordo della finestra, ma
+                // l'intestazione fissa di Streamlit lo coprirebbe: si scende
+                // quindi di un margine pari alla sua altezza, piu' un po' di
+                // respiro, cosi' si vede anche cio' che sta appena sopra
+                const margine = () => {{
+                  const h = doc.querySelector('[data-testid="stHeader"]');
+                  const alt = h ? h.getBoundingClientRect().height : 0;
+                  return alt + RESPIRO;
+                }};
+
                 let tentativi = 0, riuscito = false;
                 window.__scrollTimer = setInterval(function () {{
                   tentativi++;
@@ -1046,6 +1067,13 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None):
                   if (el) {{
                     try {{
                       el.scrollIntoView({{block: 'start', behavior: 'instant'}});
+                      const c = candidati().find(
+                        x => x.scrollHeight > x.clientHeight + 8);
+                      if (c) {{
+                        c.scrollTop = Math.max(0, c.scrollTop - margine());
+                      }} else {{
+                        window.scrollTo(0, Math.max(0, window.scrollY - margine()));
+                      }}
                       riuscito = true;
                     }} catch (e) {{}}
                   }}
@@ -1062,7 +1090,8 @@ def _scroll_pagina(modo, traccia, ancora_fissa=None):
 
         if (w.__scrollHelper) {{
           w.__scrollHelper("{modo}", {str(bool(traccia)).lower()},
-                           {repr(ancora_fissa) if ancora_fissa else "null"});
+                           {repr(ancora_fissa) if ancora_fissa else "null"},
+                           {int(respiro)});
         }}
       }})();
     </script>
@@ -1237,8 +1266,10 @@ def _scroll_se_cambio_pagina():
     fissa = (ANCORA_ESEMPI if in_esempi and st.session_state.get("revisits", 0) > 0
              else None)
 
+    respiro = (RESPIRO_ESEMPI if fissa
+               else RESPIRO_PAZIENTE if riprendi else 0)
     _scroll_pagina("ripristina" if riprendi else "cima",
-                   traccia=in_domande, ancora_fissa=fissa)
+                   traccia=in_domande, ancora_fissa=fissa, respiro=respiro)
 
 
 def _accumula_tempo(fase):
